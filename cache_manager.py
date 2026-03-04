@@ -9,10 +9,7 @@ from collections import OrderedDict
 from functools import wraps
 
 CACHE_DIR = "cache"
-
-if not os.path.exists(CACHE_DIR):
-    os.makedirs(CACHE_DIR)
-
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 class LRUMemoryCache:
     """Thread-safe in-memory LRU cache. Bounded to max_size entries."""
@@ -123,6 +120,9 @@ class SmartCache:
         tmp_path = None
         
         try:
+            # Re-ensure directory exists (in case it was deleted while server is running)
+            os.makedirs(dir_name, exist_ok=True)
+            
             # Atomic Write: Write to temp -> Rename
             fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix='.tmp')
             
@@ -132,7 +132,11 @@ class SmartCache:
                     "payload": payload
                 }, f)
                 f.flush()
-                os.fsync(f.fileno())
+                # os.fsync is not available/necessary on all platforms, handle gracefully
+                try:
+                    os.fsync(f.fileno())
+                except OSError:
+                    pass
                 
             # Atomic swap (safe even without locking since os.replace is atomic on Linux)
             os.replace(tmp_path, path)

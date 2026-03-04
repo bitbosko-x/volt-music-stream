@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import {
     X, ChevronDown, SkipBack, SkipForward, Volume2, VolumeX,
     RotateCcw, Shuffle, Zap, Play, Pause, ListMusic, Maximize2, MoreHorizontal,
-    ListPlus, CheckCircle2
+    ListPlus, CheckCircle2, Disc
 } from 'lucide-react';
 import { getAudioStream, getVideoPreview } from '@/lib/api';
 import { MusicBars } from './MusicBars';
 import { usePlaylist } from '@/context/PlaylistContext';
+import { AnimatedLogo } from '@/components/AnimatedLogo';
 import { PlayerError, PlayerLoadingState } from './PlayerError';
 
 export function StickyPlayer() {
@@ -117,20 +118,62 @@ export function StickyPlayer() {
         };
         loadPlayer();
 
-        const handlePlayerUpdate = (e) => {
+        const handlePlayerUpdate = async (e) => {
             const trackData = e.detail;
-            setPlayer(trackData);
-            localStorage.setItem('currentTrack', JSON.stringify(trackData));
-            if (trackData?.queue) {
+            if (!trackData) {
+                // Player closed
+                setPlayer(null);
+                return;
+            }
+
+            // If stream_url is already resolved (e.g. queue navigation), use it directly
+            if (trackData.stream_url) {
+                setPlayer(trackData);
+                localStorage.setItem('currentTrack', JSON.stringify(trackData));
+                if (trackData.queue) {
+                    setQueue(trackData.queue);
+                    setCurrentIndex(trackData.currentIndex || 0);
+                    localStorage.setItem('queue', JSON.stringify(trackData.queue));
+                    localStorage.setItem('currentIndex', trackData.currentIndex || 0);
+                } else {
+                    setQueue([]);
+                    setCurrentIndex(0);
+                    localStorage.removeItem('queue');
+                    localStorage.removeItem('currentIndex');
+                }
+                return;
+            }
+
+            // No stream_url yet — show player immediately in loading state, then fetch
+            const metaOnly = { ...trackData, stream_url: null };
+            setPlayer(metaOnly);
+            setStreamError(null);
+            setStreamLoading(true);
+            if (trackData.queue) {
                 setQueue(trackData.queue);
                 setCurrentIndex(trackData.currentIndex || 0);
                 localStorage.setItem('queue', JSON.stringify(trackData.queue));
                 localStorage.setItem('currentIndex', trackData.currentIndex || 0);
-            } else if (trackData) {
+            } else {
                 setQueue([]);
                 setCurrentIndex(0);
                 localStorage.removeItem('queue');
                 localStorage.removeItem('currentIndex');
+            }
+
+            try {
+                const { stream_url, source } = await getAudioStream(trackData.search_term, trackData.artist);
+                const fullTrack = { ...trackData, stream_url, source };
+                setPlayer(fullTrack);
+                localStorage.setItem('currentTrack', JSON.stringify(fullTrack));
+                localStorage.setItem('currentTime', 0);
+            } catch (error) {
+                console.error('Failed to resolve stream:', error);
+                const errorType = !navigator.onLine ? 'network' : 'stream';
+                setStreamError({ type: errorType, song: trackData });
+                setPlayer(null);
+            } finally {
+                setStreamLoading(false);
             }
         };
 
@@ -291,13 +334,14 @@ export function StickyPlayer() {
         setStreamError(null);
         setStreamLoading(true);
         try {
-            const { stream_url, source } = await getAudioStream(song.search_term);
+            const { stream_url, source } = await getAudioStream(song.search_term, song.artist);
             const trackData = {
                 title: song.title,
                 artist: song.artist,
                 img: song.img || song.image,
                 album: song.album || null,
                 album_id: song.album_id || null,
+                search_term: song.search_term,
                 stream_url,
                 source,
                 queue: queue,
@@ -337,6 +381,12 @@ export function StickyPlayer() {
             audioRef.current.paused ? audioRef.current.play() : audioRef.current.pause();
         }
     };
+
+    useEffect(() => {
+        const handleToggleGlobalPlay = () => togglePlay();
+        window.addEventListener('toggleGlobalPlay', handleToggleGlobalPlay);
+        return () => window.removeEventListener('toggleGlobalPlay', handleToggleGlobalPlay);
+    }, []);
 
     const formatTime = (seconds) => {
         if (isNaN(seconds)) return '0:00';
@@ -401,30 +451,36 @@ export function StickyPlayer() {
                             />
                         ) : (
                             <img
-                                src={player.img}
+                                src={player.img || player.image || player.cover}
                                 alt="Background"
-                                className="w-full h-full object-cover opacity-80 blur-2xl scale-125 animate-pulse-slow"
+                                className="w-full h-full object-cover opacity-50 blur-[60px] scale-150 saturate-[1.5]"
                             />
                         )}
-                        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-[#09090b] via-transparent to-transparent" />
+                        <div className={`absolute inset-0 ${videoUrl ? 'bg-black/20' : 'bg-[#09090b]/50'} backdrop-blur-sm`} />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#09090b]/80 to-transparent" />
                     </div>
 
                     {/* Top Bar */}
 
                     <header className="flex items-center justify-between px-4 py-4 md:px-6 md:py-5 border-b border-white/5 bg-[#09090b]/95 backdrop-blur-sm z-30">
                         <button
-                            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                            className="flex items-center gap-2 sm:gap-4 hover:scale-105 transition-all duration-300 group shrink-0"
                             onClick={() => { navigate('/'); setIsExpanded(false); }}
                         >
-                            <Zap className="h-5 w-5 text-white fill-white" />
-                            <span className="font-volt text-xl tracking-normal">Volt Music</span>
+                            <AnimatedLogo className="h-8 w-8 sm:h-10 sm:w-10 md:h-12 md:w-12" isPlaying={isExpanded && isPlaying} />
+                            <span className="text-lg sm:text-2xl md:text-3xl tracking-widest text-[#f5f5f5] whitespace-nowrap pt-1" style={{
+                                fontFamily: '"Monoton", sans-serif',
+                                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                                lineHeight: 1
+                            }}>
+                                Volt Music
+                            </span>
                         </button>
-                        <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-full border border-white/10">
-                                <div className={`w-2 h-2 rounded-full ${player.source === 'saavn' ? 'bg-green-500' : 'bg-yellow-500'} shadow-[0_0_8px_rgba(34,197,94,0.4)]`} />
-                                <span className="text-xs font-medium text-zinc-300">
-                                    {player.source === 'saavn' ? '320kbps AAC (HQ)' : '128kbps M4A'}
+                        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                            <div className="flex items-center gap-1.5 sm:gap-2 bg-zinc-900/80 backdrop-blur-md px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border border-white/10 shadow-inner">
+                                <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${player.source === 'saavn' ? 'bg-[#b5f000]' : 'bg-yellow-500'} shadow-[0_0_8px_rgba(181,240,0,0.5)] animate-pulse-slow`} />
+                                <span className={`text-[9px] sm:text-xs font-bold tracking-wider uppercase ${player.source === 'saavn' ? 'text-[#b5f000]' : 'text-yellow-500'}`}>
+                                    {player.source === 'saavn' ? '320kbps (HQ)' : '128kbps M4A'}
                                 </span>
                             </div>
                         </div>
@@ -434,31 +490,38 @@ export function StickyPlayer() {
                     <main className="flex-1 flex overflow-hidden min-h-0">
                         {/* Center Visuals */}
                         <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8 lg:p-12 relative bg-gradient-to-b from-zinc-900/10 to-black/50 overflow-hidden">
-                            {/* Album Art */}
                             <div
-                                className="relative w-full max-w-[280px] md:max-w-sm rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 transition-transform duration-500 hover:scale-105 mt-2 md:mt-0 mx-auto shrink-1"
+                                className="relative w-[clamp(150px,60vw,350px)] sm:w-full sm:max-w-sm max-h-[35vh] md:max-h-none rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] ring-1 ring-white/10 transition-transform duration-500 hover:scale-105 mt-2 md:mt-0 mx-auto shrink-1 group"
                                 style={{ aspectRatio: '1/1' }}
                             >
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                                <div className="absolute -inset-4 bg-[#00f3ff] blur-[100px] opacity-20 group-hover:opacity-40 transition-opacity duration-700 -z-10" />
                                 <img
                                     src={player.img}
                                     alt={player.title}
-                                    className="w-full h-full object-cover"
+                                    className={`w-full h-full object-contain transition-opacity duration-300 relative z-0 ${streamLoading ? 'opacity-40' : 'opacity-100'}`}
                                 />
+                                {streamLoading && (
+                                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/40 backdrop-blur-[2px]">
+                                        <div className="w-12 h-12 rounded-full border-[3px] border-[#00f3ff]/30 border-t-[#00f3ff] animate-spin shadow-[0_0_15px_rgba(181,240,0,0.5)]" />
+                                        <span className="text-xs font-bold text-[#00f3ff] tracking-widest uppercase animate-pulse">Loading…</span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Large Title */}
                             <div className="mt-4 md:mt-8 text-center max-w-2xl px-4 shrink-0">
-                                <h1 className="text-2xl md:text-3xl lg:text-5xl font-bold tracking-tight text-white mb-2 leading-tight drop-shadow-2xl">
+                                <h1 className="text-xl md:text-3xl lg:text-5xl font-extrabold tracking-tight text-white mb-2 leading-tight drop-shadow-2xl">
                                     {player.title}
                                 </h1>
-                                <div className="text-lg md:text-xl 2xl:text-2xl 3xl:text-3xl text-zinc-400 font-medium tracking-wide flex flex-wrap justify-center gap-1">
+                                <div className="text-sm sm:text-lg md:text-xl 2xl:text-2xl 3xl:text-3xl text-zinc-400 font-semibold tracking-wide flex flex-wrap justify-center gap-1 mt-1 sm:mt-0">
                                     {(player.artist || '').split(/,|&|feat\.|ft\.|featuring/i).map((part, i, arr) => {
                                         const artistName = part.trim();
                                         if (!artistName) return null;
                                         return (
                                             <span key={i} className="flex items-center">
                                                 <span
-                                                    className="hover:text-white hover:underline cursor-pointer transition-colors"
+                                                    className="hover:text-[#00f3ff] hover:drop-shadow-[0_0_8px_rgba(181,240,0,0.5)] cursor-pointer transition-all duration-300"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         handleArtistClick(artistName);
@@ -474,9 +537,9 @@ export function StickyPlayer() {
                                 {player.album && player.album_id && (
                                     <button
                                         onClick={handleAlbumClick}
-                                        className="mt-1 text-sm 2xl:text-base 3xl:text-lg text-zinc-500 hover:text-zinc-200 hover:underline transition-colors"
+                                        className="mt-2 text-sm 2xl:text-base 3xl:text-lg text-zinc-500 hover:text-white transition-colors duration-300 flex items-center justify-center gap-2 mx-auto bg-white/5 hover:bg-white/10 px-4 py-1.5 rounded-full border border-white/5"
                                     >
-                                        💿 {player.album}
+                                        <Disc className="h-4 w-4" /> {player.album}
                                     </button>
                                 )}
                             </div>
@@ -484,19 +547,19 @@ export function StickyPlayer() {
                             {/* Up Next Playlist — shown below artist, hidden on lg (sidebar handles it) */}
                             {upNext.length > 0 && (
                                 <div className="lg:hidden w-full max-w-sm px-4 mt-4 shrink-0">
-                                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2 text-center">Up Next</p>
-                                    <div className="space-y-1">
-                                        {/* Mobile: max 3 songs, sm+: max 6, all on md+ */}
+                                    <p className="text-[10px] font-bold uppercase tracking-widest text-[#00f3ff] mb-2 text-center drop-shadow-[0_0_5px_rgba(181,240,0,0.3)]">Up Next</p>
+                                    <div className="space-y-1.5">
+                                        {/* Mobile: max 1 song shown under 412px, 2 songs up to sm, 3 on sm+ */}
                                         {upNext.slice(0, 3).map((song, idx) => (
                                             <div
                                                 key={idx}
-                                                className={`group flex items-center gap-3 px-3 py-2 rounded-xl transition-all cursor-pointer
-                                                    ${idx === 0 ? 'bg-white/10 ring-1 ring-white/10' : 'hover:bg-white/5'}
-                                                    ${idx >= 2 ? 'hidden sm:flex' : 'flex'}
+                                                className={`group items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-300 cursor-pointer backdrop-blur-md border
+                                                    ${idx === 0 ? 'bg-white/10 border-white/20 shadow-lg' : 'bg-white/5 border-transparent hover:bg-white/10 hover:border-white/10'}
+                                                    ${idx >= 2 ? 'hidden sm:flex' : idx === 1 ? 'hidden min-[412px]:flex' : 'flex'}
                                                 `}
                                                 onClick={() => playFromQueue(song, currentIndex + 1 + idx)}
                                             >
-                                                <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0 bg-zinc-800">
+                                                <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-zinc-800 shadow-md">
                                                     <img
                                                         src={song.img || song.image}
                                                         alt={song.title}
@@ -505,15 +568,18 @@ export function StickyPlayer() {
                                                     />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-zinc-200 group-hover:text-white truncate transition-colors leading-tight">
+                                                    <p className="text-sm font-bold text-zinc-200 group-hover:text-white truncate transition-colors leading-tight">
                                                         {song.title}
                                                     </p>
-                                                    <p className="text-[11px] text-zinc-400 group-hover:text-zinc-300 truncate transition-colors">
+                                                    <p className="text-xs font-medium text-zinc-500 group-hover:text-zinc-400 truncate transition-colors mt-0.5">
                                                         {song.artist}
                                                     </p>
                                                 </div>
                                                 {idx === 0 && (
-                                                    <span className="text-[10px] text-zinc-500 shrink-0">Next</span>
+                                                    <div className="flex items-center gap-1">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-[#00f3ff] animate-pulse-slow" />
+                                                        <span className="text-[10px] font-bold text-[#00f3ff] uppercase tracking-wider shrink-0">Next</span>
+                                                    </div>
                                                 )}
                                             </div>
                                         ))}
@@ -528,25 +594,29 @@ export function StickyPlayer() {
                         </div>
 
                         {/* Right Sidebar: Queue */}
-                        <div className="hidden lg:flex w-96 bg-black/30 backdrop-blur-md border-l border-white/10 flex-col z-20 shadow-2xl">
-                            <div className="p-5 border-b border-white/5 flex justify-between items-center bg-transparent">
-                                <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Up Next</h3>
+                        <div className="hidden lg:flex w-96 bg-black/40 backdrop-blur-xl border-l border-white/10 flex-col z-20 shadow-2xl">
+                            <div className="p-5 border-b border-white/5 flex justify-between items-center bg-white/5">
+                                <h3 className="text-xs font-bold text-[#00f3ff] uppercase tracking-widest flex items-center gap-2 drop-shadow-[0_0_8px_rgba(181,240,0,0.3)]">
+                                    <ListMusic className="h-4 w-4" />
+                                    Up Next
+                                </h3>
+                                <span className="text-xs font-medium text-zinc-500 bg-black/50 px-2 py-1 rounded-full">{upNext.length} Tracks</span>
                             </div>
-                            <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+                            <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
                                 {upNext.length === 0 ? (
-                                    <div className="h-full flex flex-col items-center justify-center text-zinc-600 space-y-2">
-                                        <ListMusic className="h-10 w-10 opacity-20" />
-                                        <p className="text-sm">Queue is empty</p>
+                                    <div className="h-full flex flex-col items-center justify-center text-zinc-600 space-y-3">
+                                        <ListMusic className="h-12 w-12 opacity-20" />
+                                        <p className="text-sm font-medium">Queue is empty</p>
                                     </div>
                                 ) : (
-                                    <div className="space-y-1">
+                                    <div className="space-y-1.5">
                                         {upNext.map((song, idx) => (
                                             <div
                                                 key={idx}
-                                                className="group flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                                                className="group flex items-center gap-3 p-2.5 rounded-xl bg-white/5 border border-transparent hover:bg-white/10 hover:border-white/10 transition-all duration-300 cursor-pointer"
                                                 onClick={() => playFromQueue(song, currentIndex + 1 + idx)}
                                             >
-                                                <div className="w-10 h-10 rounded overflow-hidden shrink-0 bg-zinc-800">
+                                                <div className="relative w-11 h-11 rounded-lg overflow-hidden shrink-0 bg-zinc-800 shadow-md">
                                                     <img
                                                         src={song.img || song.image}
                                                         alt={song.title}
@@ -555,12 +625,20 @@ export function StickyPlayer() {
                                                     />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-zinc-300 group-hover:text-white truncate transition-colors">
+                                                    <p className="text-sm font-bold text-zinc-300 group-hover:text-white truncate transition-colors leading-snug">
                                                         {song.title}
                                                     </p>
-                                                    <p className="text-xs text-zinc-600 group-hover:text-zinc-400 truncate transition-colors">
+                                                    <p className="text-xs font-semibold text-zinc-500 group-hover:text-zinc-400 truncate transition-colors">
                                                         {song.artist}
                                                     </p>
+                                                </div>
+                                                {/* Play indicator on hover or next */}
+                                                <div className="w-8 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <div className="w-6 h-6 rounded-full bg-[#00f3ff]/10 flex items-center justify-center">
+                                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="#00f3ff">
+                                                            <polygon points="7,3 21,12 7,21" />
+                                                        </svg>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
@@ -641,9 +719,12 @@ export function StickyPlayer() {
                                 </button>
                                 <button
                                     onClick={togglePlay}
-                                    className="w-12 h-12 md:w-10 md:h-10 bg-white rounded-full flex items-center justify-center hover:scale-105 transition active:scale-95 text-black shadow-lg shadow-white/10"
+                                    disabled={streamLoading}
+                                    className="w-12 h-12 md:w-10 md:h-10 bg-white rounded-full flex items-center justify-center hover:scale-105 transition active:scale-95 text-black shadow-lg shadow-white/10 disabled:opacity-70 disabled:cursor-not-allowed"
                                 >
-                                    {isPlaying ? (
+                                    {streamLoading ? (
+                                        <div className="w-5 h-5 rounded-full border-2 border-black/20 border-t-black animate-spin" />
+                                    ) : isPlaying ? (
                                         <Pause className="h-6 w-6 md:h-5 md:w-5 fill-current" />
                                     ) : (
                                         <Play className="h-6 w-6 md:h-5 md:w-5 fill-current ml-0.5" />
@@ -704,7 +785,7 @@ export function StickyPlayer() {
                                 <button onClick={toggleMute} className="text-zinc-400 hover:text-white transition-colors">
                                     {volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                                 </button>
-                                <div className="hidden md:block w-20 lg:w-24 h-1 bg-zinc-800 rounded-full relative cursor-pointer group-hover:bg-zinc-700 transition-colors">
+                                <div className="hidden md:block w-20 lg:w-28 h-1.5 bg-zinc-800 rounded-full relative cursor-pointer group-hover:bg-zinc-700 transition-colors">
                                     <input
                                         type="range"
                                         min="0"
@@ -715,8 +796,12 @@ export function StickyPlayer() {
                                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                                     />
                                     <div
-                                        className="absolute top-0 left-0 h-full bg-white rounded-full pointer-events-none"
+                                        className="absolute top-0 left-0 h-full bg-white group-hover:bg-[#00f3ff] rounded-full pointer-events-none transition-colors"
                                         style={{ width: `${volume * 100}%` }}
+                                    />
+                                    <div
+                                        className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                                        style={{ left: `${volume * 100}%`, transform: 'translate(-50%, -50%)' }}
                                     />
                                 </div>
                             </div>
@@ -764,13 +849,13 @@ export function StickyPlayer() {
                             />
                         </div>
 
-                        <div className="max-w-screen-2xl mx-auto flex items-center gap-2 px-3 py-3 md:gap-4 md:px-4 md:py-3 cursor-pointer" onClick={(e) => {
+                        <div className="max-w-screen-2xl mx-auto flex items-center gap-2 px-3 py-4 md:gap-4 md:px-5 md:py-4 cursor-pointer" onClick={(e) => {
                             // Only expand if clicking the general area, not buttons
                             if (e.target === e.currentTarget || e.target.closest('.flex-1')) setIsExpanded(true);
                         }}>
                             {/* Album Art + Info */}
-                            <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0">
-                                <div className="relative w-10 h-10 md:w-14 md:h-14 rounded-lg overflow-hidden shrink-0 shadow-lg ring-1 ring-white/10">
+                            <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
+                                <div className="relative w-12 h-12 md:w-16 md:h-16 rounded-lg overflow-hidden shrink-0 shadow-lg ring-1 ring-white/10">
                                     <img src={player.img} alt={player.title} className="w-full h-full object-cover" />
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -800,11 +885,16 @@ export function StickyPlayer() {
 
                             {/* Center Controls */}
                             <div className="flex items-center gap-1 md:gap-2 shrink-0">
+                                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); restartSong(); }} className="h-8 w-8 md:h-9 md:w-9 text-purple-200 hover:bg-white/10 hover:text-white disabled:opacity-30">
+                                    <RotateCcw className="h-4 w-4 md:h-5 md:w-5" />
+                                </Button>
                                 <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); playPrevious(); }} disabled={currentIndex === 0} className="h-8 w-8 md:h-9 md:w-9 text-purple-200 hover:bg-white/10 hover:text-white disabled:opacity-30">
                                     <SkipBack className="h-4 w-4 md:h-5 md:w-5" />
                                 </Button>
-                                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); togglePlay(); }} className="h-9 w-9 md:h-10 md:w-10 text-white hover:bg-white/10">
-                                    {isPlaying ? <Pause className="h-5 w-5 md:h-6 md:w-6 fill-current" /> : <Play className="h-5 w-5 md:h-6 md:w-6 fill-current ml-0.5" />}
+                                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); togglePlay(); }} disabled={streamLoading} className="h-9 w-9 md:h-10 md:w-10 text-white hover:bg-white/10 disabled:opacity-70">
+                                    {streamLoading
+                                        ? <div className="w-5 h-5 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+                                        : isPlaying ? <Pause className="h-5 w-5 md:h-6 md:w-6 fill-current" /> : <Play className="h-5 w-5 md:h-6 md:w-6 fill-current ml-0.5" />}
                                 </Button>
                                 <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); playNext(); }} disabled={queue.length === 0 || currentIndex >= queue.length - 1} className="h-8 w-8 md:h-9 md:w-9 text-purple-200 hover:bg-white/10 hover:text-white disabled:opacity-30">
                                     <SkipForward className="h-4 w-4 md:h-5 md:w-5" />
@@ -812,12 +902,31 @@ export function StickyPlayer() {
                             </div>
 
                             {/* Right: Volume & Tools */}
-                            <div className="flex items-center justify-end shrink-0 gap-1 md:gap-2">
-                                <div className="hidden md:flex items-center gap-2">
+                            <div className="flex items-center justify-end shrink-0 gap-1 md:gap-3">
+                                <div className="hidden md:flex items-center gap-2 group">
                                     <button onClick={(e) => { e.stopPropagation(); toggleMute(); }} className="text-purple-200 hover:text-white transition-colors">
                                         {volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                                     </button>
-                                    <input type="range" min="0" max="1" step="0.01" value={volume} onClick={(e) => e.stopPropagation()} onChange={handleVolumeChange} className="w-24 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer" />
+                                    <div className="w-20 lg:w-24 h-1.5 bg-white/10 rounded-full relative cursor-pointer group-hover:bg-white/20 transition-colors">
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="1"
+                                            step="0.01"
+                                            value={volume}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onChange={handleVolumeChange}
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                        />
+                                        <div
+                                            className="absolute top-0 left-0 h-full bg-white group-hover:bg-[#00f3ff] rounded-full pointer-events-none transition-colors"
+                                            style={{ width: `${volume * 100}%` }}
+                                        />
+                                        <div
+                                            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                                            style={{ left: `${volume * 100}%`, transform: 'translate(-50%, -50%)' }}
+                                        />
+                                    </div>
                                 </div>
                                 <Button
                                     variant="ghost"

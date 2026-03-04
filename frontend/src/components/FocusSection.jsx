@@ -1,7 +1,5 @@
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Play, Brain, Coffee, Moon, BookOpen } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { AnimatedSectionHeader, AnimatedCategoryCard } from '@/components/AnimatedCards';
+import { Brain } from 'lucide-react';
 
 export function FocusSection({ onCategoryClick }) {
 
@@ -9,62 +7,45 @@ export function FocusSection({ onCategoryClick }) {
         {
             title: "Lofi Beats",
             subtitle: "Chill & Relax",
-            icon: Coffee,
-            color: "bg-orange-100 text-orange-600",
-            query: "lofi hip hop radio"
+            color: "#f97316",
+            image: "https://images.unsplash.com/photo-1516280440614-37939bbacd81?w=400&q=80",
+            query: "lofi hip hop chill beats"
         },
         {
             title: "Deep Focus",
             subtitle: "Instrumental Study",
-            icon: Brain,
-            color: "bg-blue-100 text-blue-600",
-            query: "deep focus instrumental"
+            color: "#3b82f6",
+            image: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&q=80",
+            query: "instrumental deep focus study music"
         },
         {
-            title: "Sleep Sound",
-            subtitle: "Ambient Peace",
-            icon: Moon,
-            color: "bg-indigo-100 text-indigo-600",
-            query: "ambient sleep music"
-        },
-        {
-            title: "Reading Jazz",
-            subtitle: "Soft Background",
-            icon: BookOpen,
-            color: "bg-emerald-100 text-emerald-600",
-            query: "coffee shop jazz"
+            title: "Ambient Calm",
+            subtitle: "Stress Relief",
+            color: "#10b981",
+            image: "https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?w=400&q=80",
+            query: "ambient calm meditation music"
         }
     ];
 
     return (
-        <div className="mb-8">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <Brain className="h-5 w-5" />
-                Focus & Study
-            </h2>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {focusPlaylists.map((playlist, idx) => {
-                    const Icon = playlist.icon;
-                    return (
-                        <Card
-                            key={idx}
-                            onClick={() => onCategoryClick({
-                                id: `focus_${idx}`,
-                                title: playlist.title,
-                                description: playlist.subtitle,
-                                query: playlist.query
-                            })}
-                            className="p-4 cursor-pointer hover:bg-accent transition-colors group"
-                        >
-                            <div className={`w-12 h-12 rounded-full mb-3 flex items-center justify-center ${playlist.color}`}>
-                                <Icon className="h-6 w-6" />
-                            </div>
-                            <h3 className="font-semibold group-hover:text-primary transition-colors">{playlist.title}</h3>
-                            <p className="text-sm text-muted-foreground">{playlist.subtitle}</p>
-                        </Card>
-                    );
-                })}
+        <section style={{ padding: "0 0 36px" }}>
+            <AnimatedSectionHeader title="Focus & Study" sub="Get into the zone" />
+            <div className="hscroll">
+                {focusPlaylists.map((playlist, idx) => (
+                    <AnimatedCategoryCard
+                        key={idx}
+                        wrapperClass={idx >= 3 ? 'hidden sm:block' : ''}
+                        item={{ ...playlist, label: playlist.title }}
+                        delay={idx * 60}
+                        onClick={() => onCategoryClick({
+                            id: `focus_${idx}`,
+                            title: playlist.title,
+                            description: playlist.subtitle,
+                            query: playlist.query
+                        })}
+                    />
+                ))}
             </div>
-        </div>
+        </section>
     );
 }

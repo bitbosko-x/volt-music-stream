@@ -14,15 +14,6 @@ def _get_ydl_opts():
         'ignoreerrors': True,
         'no_color': True,
         'logtostderr': False,
-        'youtube_include_dash_manifest': False,
-        'youtube_include_hls_manifest': False,
-        # Use Android client to bypass bot detection
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android'],
-                'skip': ['dash', 'hls']
-            }
-        }
     }
     
     # Check for cookies in environment variable (supports both JSON and Netscape format)
@@ -108,16 +99,31 @@ def search_youtube(query):
 
 def resolve_yt_stream(watch_url):
     """Resolves a Watch URL to a temporary audio stream URL using yt-dlp"""
-    try:
-        opts = {**YDL_OPTS_BASE, 'format': 'bestaudio/best', 'noplaylist': True}
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(watch_url, download=False)
-            if info:
-                return info.get('url')
-            return None
-    except Exception as e:
-        print(f"   [YouTube] Stream resolution failed: {e}")
-        return None
+    format_fallbacks = [
+        'bestaudio/best',
+        'audio/best',
+        'best',
+    ]
+    
+    for fmt in format_fallbacks:
+        try:
+            opts = {
+                **YDL_OPTS_BASE, 
+                'format': fmt,
+                'noplaylist': True
+            }
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(watch_url, download=False)
+                if info:
+                    url = info.get('url')
+                    if url:
+                        return url
+        except Exception as e:
+            print(f"   [YouTube] Format '{fmt}' failed: {e}")
+            continue
+    
+    print(f"   [YouTube] Stream resolution failed for: {watch_url}")
+    return None
 
 @smart_cache(ttl=600, validator=lambda x: x is not None)
 def get_audio_link(search_term):
@@ -125,21 +131,30 @@ def get_audio_link(search_term):
     SINGLE-CALL Optimized search + resolve.
     """
     print(f"   [YouTube] Speed-matching: '{search_term}'")
-    try:
-        # Combining search and resolution in one call for major speedup
-        opts = {
-            **YDL_OPTS_BASE,
-            'format': 'bestaudio/best',
-            'noplaylist': True,
-        }
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            # We use ytsearch1 to get the actual stream info immediately
-            info = ydl.extract_info(f"ytsearch1:{search_term}", download=False)
-            
-        if info and 'entries' in info and info['entries']:
-            return info['entries'][0].get('url')
-    except Exception as e:
-        print(f"   [YouTube] Audio link extraction failed: {e}")
+    
+    format_fallbacks = [
+        'bestaudio/best',
+        'audio/best',
+        'best',
+    ]
+    
+    for fmt in format_fallbacks:
+        try:
+            opts = {
+                **YDL_OPTS_BASE,
+                'format': fmt,
+                'noplaylist': True,
+            }
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(f"ytsearch1:{search_term}", download=False)
+                
+            if info and 'entries' in info and info['entries']:
+                url = info['entries'][0].get('url')
+                if url:
+                    return url
+        except Exception as e:
+            print(f"   [YouTube] Format '{fmt}' failed: {e}")
+            continue
             
     return None
 
@@ -152,7 +167,7 @@ def get_video_url(search_term):
     try:
         opts = {
             **YDL_OPTS_BASE,
-            'format': 'best[ext=mp4]/best', # We want video!
+            'format': 'bestvideo[ext=mp4]/bestvideo[ext=webm]/best[ext=mp4]/best',
             'noplaylist': True,
         }
         with yt_dlp.YoutubeDL(opts) as ydl:

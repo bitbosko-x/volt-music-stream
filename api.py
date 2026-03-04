@@ -1,5 +1,8 @@
 import os
 import re
+from dotenv import load_dotenv
+load_dotenv()
+
 import hub
 import metadata_engine
 import yt_engine
@@ -28,12 +31,23 @@ CORS(
 )
 
 # ── Rate Limiting ─────────────────────────────────────────────────────────────
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["200 per hour", "50 per minute"],
-    storage_uri="memory://",
-)
+# Environment-based rate limiting
+DEV_MODE = os.getenv("FLASK_ENV", "production") == "development"
+
+if DEV_MODE:
+    limiter = Limiter(
+        get_remote_address,
+        app=app,
+        default_limits=["1000 per minute"],
+        storage_uri="memory://",
+    )
+else:
+    limiter = Limiter(
+        get_remote_address,
+        app=app,
+        default_limits=["200 per hour", "60 per minute"],
+        storage_uri="memory://",
+    )
 
 # ── Security Headers ──────────────────────────────────────────────────────────
 @app.after_request
@@ -72,8 +86,13 @@ def sanitize_query(q: str) -> str | None:
 
 # ============= API ROUTES (JSON) =============
 
+@app.route('/api/ping', methods=['GET'])
+def api_ping():
+    """Health check endpoint - no rate limit"""
+    return jsonify({"status": "ok"})
+
 @app.route('/api/search', methods=['POST', 'GET'])
-@limiter.limit("30 per minute")
+@limiter.limit("60 per minute")
 def api_search():
     """Search endpoint returning categorized JSON results"""
     if request.method == 'POST':
@@ -100,7 +119,7 @@ def api_search():
 
 
 @app.route('/api/album/<album_id>', methods=['GET'])
-@limiter.limit("60 per minute")
+@limiter.limit("120 per minute")
 def api_album(album_id):
     """Get album tracks"""
     try:
@@ -116,7 +135,7 @@ def api_album(album_id):
 
 
 @app.route('/api/artist/<artist_name>', methods=['GET'])
-@limiter.limit("60 per minute")
+@limiter.limit("120 per minute")
 def api_artist(artist_name):
     """Get artist songs"""
     try:
@@ -132,7 +151,7 @@ def api_artist(artist_name):
 
 
 @app.route('/api/category/<category_id>', methods=['GET'])
-@limiter.limit("60 per minute")
+@limiter.limit("120 per minute")
 def api_category(category_id):
     """Get curated songs for a specific category"""
     try:
@@ -146,6 +165,18 @@ def api_category(category_id):
         print(f"API CATEGORY: Error: {e}")
         return jsonify({"error": "Internal Server Error"}), 500
 
+@app.route('/api/top-artists', methods=['GET'])
+@limiter.limit("60 per minute")
+def api_top_artists():
+    """Get curated top global artists"""
+    try:
+        artists_data = metadata_engine.get_top_global_artists()
+        if not artists_data:
+            return jsonify({"error": "Top artists not found"}), 404
+        return jsonify(artists_data)
+    except Exception as e:
+        print(f"API TOP ARTISTS: Error: {e}")
+        return jsonify({"error": "Internal Server Error"}), 500
 
 @app.route('/api/play', methods=['POST'])
 @limiter.limit("20 per minute")
@@ -153,13 +184,15 @@ def api_play():
     """Get audio stream URL for a song"""
     data = request.get_json() or {}
     raw_search_term = data.get('search_term', '')
+    artist_name = data.get('artist', None)  # Optional artist hint from frontend
 
     search_term = sanitize_query(raw_search_term)
     if not search_term:
         return jsonify({"error": "search_term is required and must be ≤ 200 characters"}), 400
 
     try:
-        stream_url, source = hub.get_audio_link(search_term)
+        stream_url, source = hub.get_audio_link(search_term, artist_name=artist_name)
+
 
         if not stream_url:
             return jsonify({"error": "Could not find audio stream"}), 404

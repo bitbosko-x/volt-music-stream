@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { usePlaylist } from '@/context/PlaylistContext';
 import { Check, Plus, X, ListMusic, Trash2 } from 'lucide-react';
 
@@ -10,6 +10,19 @@ export function PlaylistModal() {
 
     const [newName, setNewName] = useState('');
     const [showInput, setShowInput] = useState(false);
+    const [errorMsg, setErrorMsg] = useState('');
+    const errorTimerRef = useRef(null);
+
+    // Cleanup timer on unmount
+    useEffect(() => {
+        return () => clearTimeout(errorTimerRef.current);
+    }, []);
+
+    const showError = (msg) => {
+        setErrorMsg(msg);
+        clearTimeout(errorTimerRef.current);
+        errorTimerRef.current = setTimeout(() => setErrorMsg(''), 3500);
+    };
 
     if (!modalSong) return null;
 
@@ -23,16 +36,21 @@ export function PlaylistModal() {
 
     const handleCreate = () => {
         if (!newName.trim()) return;
+        showError('');
         const newId = `pl_${Date.now()}`;
-        createPlaylist(newName.trim(), newId);
-        addSongToPlaylist(newId, modalSong);
-        setNewName('');
-        setShowInput(false);
+        try {
+            createPlaylist(newName.trim(), newId);
+            addSongToPlaylist(newId, modalSong);
+            setNewName('');
+            setShowInput(false);
+        } catch (error) {
+            showError(error.message || "Failed to create playlist.");
+        }
     };
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') handleCreate();
-        if (e.key === 'Escape') { setShowInput(false); setNewName(''); }
+        if (e.key === 'Escape') { setShowInput(false); setNewName(''); showError(''); }
     };
 
     return (
@@ -106,45 +124,59 @@ export function PlaylistModal() {
                     {/* Create new playlist */}
                     <div className="border-t border-white/10 mt-1 px-5 py-3">
                         {showInput ? (
-                            <div className="flex items-center gap-2">
-                                <input
-                                    autoFocus
-                                    type="text"
-                                    value={newName}
-                                    onChange={(e) => setNewName(e.target.value)}
-                                    onKeyDown={handleKeyDown}
-                                    placeholder="Playlist name..."
-                                    className="flex-1 bg-zinc-800 text-white text-sm rounded-lg px-3 py-2 outline-none border border-white/10 focus:border-primary placeholder:text-zinc-500"
-                                />
-                                <button
-                                    onClick={handleCreate}
-                                    disabled={!newName.trim()}
-                                    className="px-3 py-2 rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-40 text-primary-foreground text-sm font-medium transition-colors"
-                                >
-                                    Create
-                                </button>
-                                <button
-                                    onClick={() => { setShowInput(false); setNewName(''); }}
-                                    className="p-2 text-zinc-400 hover:text-white transition-colors"
-                                >
-                                    <X className="h-4 w-4" />
-                                </button>
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        value={newName}
+                                        onChange={(e) => setNewName(e.target.value)}
+                                        onKeyDown={handleKeyDown}
+                                        placeholder="Playlist name..."
+                                        className="flex-1 bg-zinc-800 text-white text-sm rounded-lg px-3 py-2 outline-none border border-white/10 focus:border-primary placeholder:text-zinc-500"
+                                    />
+                                    <button
+                                        onClick={handleCreate}
+                                        disabled={!newName.trim()}
+                                        className="px-3 py-2 rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-40 text-primary-foreground text-sm font-medium transition-colors"
+                                    >
+                                        Create
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowInput(false); setNewName(''); showError(''); }}
+                                        className="p-2 text-zinc-400 hover:text-white transition-colors"
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                </div>
+                                {errorMsg && (
+                                    <p className="text-red-400 text-xs px-1 animate-in fade-in slide-in-from-top-1">{errorMsg}</p>
+                                )}
                             </div>
                         ) : (
-                            <button
-                                onClick={() => setShowInput(true)}
-                                className="flex items-center gap-2 text-sm text-primary hover:text-primary/80 transition-colors font-medium w-full"
-                            >
-                                <div className="w-6 h-6 rounded-full border-2 border-primary flex items-center justify-center">
-                                    <Plus className="h-3.5 w-3.5" />
-                                </div>
-                                New playlist
-                            </button>
+                            <div className="flex flex-col gap-2">
+                                <button
+                                    onClick={() => {
+                                        if (playlists.length >= 8) {
+                                            showError("Maximum 8 playlists allowed. Please delete one to free up space.");
+                                        } else {
+                                            setShowInput(true);
+                                            showError('');
+                                        }
+                                    }}
+                                    className="flex items-center gap-2 text-sm text-primary hover:text-primary/80 transition-colors font-medium w-full"
+                                >
+                                    <div className="w-6 h-6 rounded-full border-2 border-primary flex items-center justify-center">
+                                        <Plus className="h-3.5 w-3.5" />
+                                    </div>
+                                    New Playlist
+                                </button>
+                                {!showInput && errorMsg && (
+                                    <p className="text-red-400 text-xs px-1 animate-in fade-in slide-in-from-top-1">{errorMsg}</p>
+                                )}
+                            </div>
                         )}
                     </div>
-
-                    {/* Safe area padding for mobile */}
-                    <div className="h-4" />
                 </div>
             </div>
         </>

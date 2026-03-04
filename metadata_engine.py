@@ -1,10 +1,14 @@
 import requests
 from requests.exceptions import RequestException
 import datetime
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 from cache_manager import smart_cache
 import random
 import re
+import lastfm_engine
 
 def fix_artwork_url(url):
     if not url: return ''
@@ -146,6 +150,38 @@ def search_metadata_categorized(query, offset=0):
     seen_titles = set() # Fallback for different IDs but same song
     
     for track in songs_raw:
+        # Filter out compilation/playlist albums - but keep movie soundtracks and singles
+        album_name = track.get('collectionName', '').lower()
+
+        # Skip if iTunes explicitly marks as Compilation
+        if track.get('collectionType') == 'Compilation':
+            continue
+        
+        # These keywords indicate DJ mixes / radio playlists — NOT movie soundtracks or studio albums
+        compilation_patterns = [
+            'non-stop', 'party song', 'party with', 'best of',
+            'hit song', 'super hit', 'dj mix', 'mashup',
+            'romantic hit', 'evergreen', 'jamming with',
+            'vibe with', 'top ', ' bollywood', 'party hit',
+            'party mix', 'party essential', 'love song',
+            'blockbuster', 'valentine',
+            'now that', 'hot 100', 'chart hit', 'playlist',
+            'top hits', 'jukebox', 'mixtape', 'various', 'compilation',
+            '#1 hit', 'number one hits',
+            'throwback', 'rewind', 'fm hits', 'radio hits',
+            'pop hits', 'dance hits', 'summer hits', 'winter hits',
+            'wedding song', 'super hits', 'mega hits',
+            'workout song', 'driving song', 'sad song',
+            'morning song', 'night songs', 'chill song',
+        ]
+        
+        # Check if it's a compilation
+        is_compilation = any(pattern in album_name for pattern in compilation_patterns)
+        
+        # Skip compilations
+        if is_compilation:
+            continue
+        
         # Deduplicate
         track_id = track.get('trackId')
         unique_key = f"{track.get('trackName', '')}-{track.get('artistName', '')}"
@@ -202,19 +238,20 @@ def search_metadata_categorized(query, offset=0):
             continue
         seen_artists.add(artist_name)
         
-        # Get artist image - use album artwork as fallback
-        artist_image = ''
-        if artist.get('artworkUrl100'):
-            artist_image = fix_artwork_url(artist.get('artworkUrl100', ''))
-        else:
-            # Fallback: Search for this artist's albums to get artwork
-            try:
-                # Quick search for artist's albums to get their image
-                artist_albums = _search_itunes_by_entity(artist_name, "album", limit=1)
-                if artist_albums and artist_albums[0].get('artworkUrl100'):
-                    artist_image = fix_artwork_url(artist_albums[0].get('artworkUrl100', ''))
-            except:
-                pass
+        # Get artist image — try Last.fm first (real photos), then iTunes album art fallback
+        artist_image = lastfm_engine.get_artist_image(artist_name)
+
+        if not artist_image:
+            # Fallback: use iTunes artworkUrl100 or search their albums
+            if artist.get('artworkUrl100'):
+                artist_image = fix_artwork_url(artist.get('artworkUrl100', ''))
+            else:
+                try:
+                    artist_albums = _search_itunes_by_entity(artist_name, "album", limit=1)
+                    if artist_albums and artist_albums[0].get('artworkUrl100'):
+                        artist_image = fix_artwork_url(artist_albums[0].get('artworkUrl100', ''))
+                except:
+                    pass
         
         artists.append({
             "name": artist_name,
@@ -364,12 +401,14 @@ def get_artist_songs(artist_name):
                 "type": "album"
             })
         
-        # Get artist image from first album (or any available artwork)
-        artist_image = ''
-        if valid_albums and valid_albums[0].get('artworkUrl100'):
-            artist_image = valid_albums[0].get('artworkUrl100', '').replace('100x100bb', '600x600bb')
-        elif songs and songs[0].get('image'):
-             artist_image = songs[0].get('image')
+        # Get artist image — try Deezer first, then iTunes fallback
+        artist_image = lastfm_engine.get_artist_image(artist_name)
+        
+        if not artist_image:
+            if valid_albums and valid_albums[0].get('artworkUrl100'):
+                artist_image = valid_albums[0].get('artworkUrl100', '').replace('100x100bb', '600x600bb')
+            elif songs and songs[0].get('image'):
+                 artist_image = songs[0].get('image')
         
         return {
             "artist_name": artist_name,
@@ -399,7 +438,14 @@ def get_video_preview(query):
             "limit": 5  # increased limit to find better matches
         }
         resp = requests.get(url, params=params, timeout=5)
-        data = resp.json()
+        if resp.status_code != 200:
+            print(f"   [Meta] iTunes API returned status {resp.status_code}")
+            return None
+        try:
+            data = resp.json()
+        except Exception as e:
+            print(f"   [Meta] Failed to parse iTunes response: {e}")
+            return None
         
         if not data.get('results'):
             return None
@@ -454,11 +500,16 @@ def get_video_preview(query):
             fallback_query = f"{query} official video"
             params['term'] = fallback_query
             resp = requests.get(url, params=params, timeout=5)
-            data = resp.json()
-            if data.get('results'):
-                # Take the first result if it seems reasonable (looser check)
-                vid = data['results'][0]
-                return vid.get('previewUrl')
+            if resp.status_code != 200:
+                print(f"   [Meta] iTunes API returned status {resp.status_code}")
+            else:
+                try:
+                    data = resp.json()
+                    if data.get('results'):
+                        vid = data['results'][0]
+                        return vid.get('previewUrl')
+                except Exception as e:
+                    print(f"   [Meta] Failed to parse iTunes response: {e}")
 
         # --- FALLBACK 2: Generic Loop ---
         # If no specific video found, return a high-quality abstract loop
@@ -469,13 +520,39 @@ def get_video_preview(query):
         print(f"   [Meta] Error fetching video preview: {e}")
         return "https://cdn.pixabay.com/video/2020/04/18/36427-410774786_large.mp4" # Fallback on error too
 
-@smart_cache(ttl=86400, validator=lambda x: x and (x.get('songs') or x.get('albums')))
+import lastfm_engine
+
+@smart_cache(ttl=1800, validator=lambda x: x and (x.get('songs') or x.get('albums')))
 def get_category_songs(category_id):
     """
     Get curated songs for specific categories.
-    Returns songs that are more likely to be chart hits and popular tracks.
+    Uses Last.fm for real charts when available, falls back to iTunes.
     """
     try:
+        # Use Last.fm for global top charts
+        if category_id == 'top100':
+            print(f"   [Meta] Fetching Top 100 from Last.fm...")
+            tracks = lastfm_engine.get_global_top_tracks(limit=50)
+            if tracks:
+                # Enrich Last.fm tracks with iTunes artwork + album name
+                # (Last.fm images are often empty/broken)
+                enriched = []
+                for t in tracks:
+                    if not t.get('image'):
+                        try:
+                            itunes_results = _search_itunes_by_entity(
+                                f"{t['title']} {t['artist']}", "song", limit=1, country="US"
+                            )
+                            if itunes_results:
+                                hit = itunes_results[0]
+                                t['image'] = fix_artwork_url(hit.get('artworkUrl100', ''))
+                                t['album'] = hit.get('collectionName', '')
+                        except Exception:
+                            pass
+                    enriched.append(t)
+                return {"songs": enriched, "albums": []}
+        
+        # Use iTunes for Hindi categories (Last.fm shows K-pop for India)
         # Define curated queries for each category
         category_queries = {
             'top100': [
@@ -490,7 +567,10 @@ def get_category_songs(category_id):
                 'viral hits', 'trending now', 'popular songs 2024'
             ],
             'hits': [
-                'greatest hits', 'classic songs', 'all time favorites'
+                # Classic legendary artists — fetch songs NOT greatest-hits compilations
+                'Michael Jackson', 'The Beatles', 'Queen', 'Eagles',
+                'Led Zeppelin', 'David Bowie', 'Elton John', 'ABBA',
+                'Elvis Presley', 'Frank Sinatra', 'Fleetwood Mac', 'The Rolling Stones'
             ],
             'charts_hindi': [
                 'Arijit Singh', 'Neha Kakkar', 'Atif Aslam', 
@@ -526,7 +606,7 @@ def get_category_songs(category_id):
         target_count = 100 if category_id == 'top100' else 50
         
         # For artist-based categories, search for specific popular artists
-        if category_id in ('top100', 'charts_hindi', 'popular_albums', 'recent_hindi_releases'):
+        if category_id in ('top100', 'charts_hindi', 'popular_albums', 'recent_hindi_releases', 'hits'):
             for artist in queries[:12]:  # Use all 12 artists for more variety
                 entity = "album" if category_id == 'popular_albums' else "song"
                 
@@ -565,6 +645,36 @@ def get_category_songs(category_id):
                             "type": "album"
                         })
                     else:
+                        # Filter out compilation/playlist albums
+                        album_name = track.get('collectionName', '').lower()
+
+                        # Skip if iTunes explicitly marks as Compilation
+                        if track.get('collectionType') == 'Compilation':
+                            continue
+
+                        # These keywords indicate DJ mixes / radio playlists — NOT movie soundtracks or studio albums
+                        compilation_patterns = [
+                            'non-stop', 'party song', 'party with', 'best of',
+                            'hit song', 'super hit', 'dj mix', 'mashup',
+                            'romantic hit', 'evergreen', 'jamming with',
+                            'vibe with', 'top ', ' bollywood', 'party hit',
+                            'party mix', 'party essential', 'love song',
+                            'blockbuster', 'valentine',
+                            'now that', 'hot 100', 'chart hit', 'playlist',
+                            'top hits', 'jukebox', 'mixtape', 'various', 'compilation',
+                            '#1 hit', 'number one hits',
+                            'throwback', 'rewind', 'fm hits', 'radio hits',
+                            'pop hits', 'dance hits', 'summer hits', 'winter hits',
+                            'wedding song', 'super hits', 'mega hits',
+                            'workout song', 'driving song', 'sad song',
+                            'morning song', 'night songs', 'chill song',
+                        ]
+                        is_compilation = any(p in album_name for p in compilation_patterns)
+                        
+                        # Skip compilations
+                        if is_compilation:
+                            continue
+                        
                         unique_key = f"{track.get('trackName', '')}-{track.get('artistName', '')}"
                         if unique_key in seen_songs or not track.get('trackName'):
                             continue
@@ -600,6 +710,58 @@ def get_category_songs(category_id):
             
             # Post-processing for Specific Categories
             if category_id == 'recent_hindi_releases':
+                # Supplementary: search specific recent hit song titles directly
+                # This catches collaborative/multi-credit songs missed by artist-only searches
+                # (e.g. "Gehra Hua" artist="Shashwat Sachdev, Arijit Singh, ..." won't appear under "Arijit Singh")
+                recent_hit_titles = [
+                    'Gehra Hua Dhurandhar', 'Tere Vaaste', 'O Bedardeya',
+                    'Kesariya', 'Raataan Lambiyan', 'Teri Baaton Mein',
+                    'Pehle Bhi Main', 'Satrangee', 'Tu Mileya',
+                ]
+                for song_title in recent_hit_titles:
+                    try:
+                        title_results = _search_itunes_by_entity(song_title, "song", limit=1, country="IN")
+                        for track in title_results:
+                            unique_key = f"{track.get('trackName', '')}-{track.get('artistName', '')}"
+                            if unique_key in seen_songs or not track.get('trackName'):
+                                continue
+                            # Apply same compilation filter
+                            album_name = track.get('collectionName', '').lower()
+                            if track.get('collectionType') == 'Compilation':
+                                continue
+                            compilation_patterns_check = [
+                                'non-stop', 'party song', 'party with', 'best of',
+                                'hit song', 'super hit', 'dj mix', 'mashup',
+                                'romantic hit', 'evergreen', 'jamming with',
+                                'vibe with', 'top ', ' bollywood', 'party hit',
+                                'party mix', 'party essential', 'love song',
+                                'blockbuster', 'valentine', 'now that', 'hot 100',
+                                'chart hit', 'playlist', 'greatest hit', 'all time',
+                                'top hits', 'jukebox', 'mixtape', 'various', 'compilation',
+                                'the very best', '#1 hit', 'number one', 'throwback',
+                                'rewind', 'fm hits', 'radio hits', 'pop hits', 'dance hits',
+                                'summer hits', 'winter hits', 'wedding song', 'super hits',
+                                'mega hits', 'workout song', 'driving song', 'sad song',
+                                'morning song', 'night songs', 'chill song',
+                            ]
+                            if any(p in album_name for p in compilation_patterns_check):
+                                continue
+                            seen_songs.add(unique_key)
+                            hq_image = fix_artwork_url(track.get('artworkUrl100', ''))
+                            search_term = f"{track['trackName']} {track['artistName']}"
+                            all_songs.append({
+                                "title": track['trackName'],
+                                "artist": track.get('artistName', 'Unknown Artist'),
+                                "album": track.get('collectionName', ''),
+                                "image": hq_image,
+                                "search_term": search_term,
+                                "source": "apple_meta",
+                                "type": "song",
+                                "release_date": track.get('releaseDate', '')
+                            })
+                    except Exception:
+                        pass
+
                 # Sort by release date (newest first)
                 all_songs.sort(key=lambda x: x.get('release_date', ''), reverse=True)
                 # Take top 50
@@ -650,3 +812,46 @@ def get_category_songs(category_id):
     except Exception as e:
         print(f"   [Meta] Error fetching category songs: {e}")
         return None
+
+@smart_cache(ttl=86400, validator=lambda x: x and len(x) > 0)
+def get_top_global_artists():
+    """
+    Returns a curated list of top global streaming artists.
+    Lazily fetches high-quality images via lastfm_engine.
+    """
+    print(f"   [Meta] Fetching Top Global Artists list...", flush=True)
+    
+    # 12 Artists for a massive grid
+    top_artists_list = [
+        "The Weeknd",
+        "Taylor Swift",
+        "Arijit Singh",
+        "Drake",
+        "Bad Bunny",
+        "Ed Sheeran",
+        "Justin Bieber",
+        "Rihanna",
+        "Dua Lipa",
+        "Billie Eilish",
+        "Post Malone",
+        "Bruno Mars"
+    ]
+    
+    results = []
+    for count, artist_name in enumerate(top_artists_list):
+        # Fetch image using existing Last.fm integration
+        artist_image = lastfm_engine.get_artist_image(artist_name)
+        
+        # If no image found, fallback empty string
+        if not artist_image:
+            artist_image = ""
+            
+        results.append({
+            "id": f"global-artist-{count}",
+            "name": artist_name,
+            "artist": artist_name, # Alias for frontend compatibility 
+            "image": artist_image,
+            "type": "artist"
+        })
+        
+    return {"artists": results}

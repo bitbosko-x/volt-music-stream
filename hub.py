@@ -7,7 +7,6 @@ import re
 from requests.exceptions import RequestException
 
 DOWNLOAD_DIR = os.path.join(os.getcwd(), 'downloads')
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 def _find_best_match(results, search_term):
     """
@@ -115,63 +114,69 @@ def get_audio_link(search_term, artist_name=None):
     """
     Takes the clean string from Apple (e.g. 'Starboy The Weeknd')
     and matches it to a real audio file.
-    Args:
-        search_term: "Title Artist"
-        artist_name: "Artist" (Optional, for strict filtering)
     """
-    # ----------------------------------------------------
-    # ENHANCED MATCHING LOGIC (Using centralized saavn_engine)
-    # ----------------------------------------------------
-    
-    # 1. Try JioSaavn with Enhanced Search
-    # Prepare artist filter if available
+    SEP = "─" * 55
+    print(f"\n{SEP}")
+    print(f"🎵 [PIPELINE] STEP 1 — Query received")
+    print(f"   Search Term : {search_term!r}")
+    print(f"   Artist Hint : {artist_name!r}")
+    print(SEP)
+
+    # ── STEP 2: JioSaavn Enhanced Search ─────────────────────
     artist_filter = [artist_name] if artist_name else None
-    
-    # If search_term contains the artist name, we might want to extract it?
-    # But usually 'artist_name' passed from app.py is reliable.
-    
     saavn_results = []
     try:
+        print(f"\n🔍 [PIPELINE] STEP 2 — Searching JioSaavn …")
         saavn_results = saavn_engine.search_saavn_enhanced(search_term, artist_filter=artist_filter)
-    except RequestException as e:
-        print(f"   [Hub] Saavn connection failed: {e}")
-        print("   [Hub] Proceeding to YouTube fallback.")
+        print(f"   Saavn returned {len(saavn_results)} usable result(s) after filtering/ranking")
     except Exception as e:
-        print(f"   [Hub] Saavn unexpected error: {e}")
-    
-    # Simple Selection: Take the first result (it's already filtered and ranked)
+        print(f"   ⚠️  Saavn search failed: {e}")
+
+    # ── STEP 3: Select best ranked result ────────────────────
     best_match = None
     if saavn_results:
+        print(f"\n🏆 [PIPELINE] STEP 3 — Top Saavn candidates (ranked best → worst):")
+        for i, r in enumerate(saavn_results[:5]):
+            marker = "✅ SELECTED" if i == 0 else f"   #{i+1}"
+            has_url = "✓ has stream URL" if r.get('url') else "✗ no stream URL"
+            print(f"   {marker}  '{r['title']}' — {r['artist']}  ({has_url})")
         best_match = saavn_results[0]
-        print(f"   [Hub] Selected Best Match: '{best_match['title']}'")
-    
-    
+        print(f"\n   Winner: '{best_match['title']}' by '{best_match['artist']}'")
+    else:
+        print(f"\n   ⚠️  [PIPELINE] STEP 3 — No Saavn results. Jumping to YouTube fallback.")
+
+    # ── STEP 4: Resolve stream URL ────────────────────────────
     if best_match:
-        # Saavn Engine already decrypts the URL and puts it in 'url'
         if best_match.get('url'):
-            print("   [Hub] Found on JioSaavn!")
+            print(f"\n🔗 [PIPELINE] STEP 4 — Stream URL resolved via Saavn")
+            print(f"   Source  : JioSaavn")
+            print(f"   URL     : {best_match['url'][:80]}…")
+            print(f"\n✅ [PIPELINE] DONE — Sending Saavn stream to player")
+            print(SEP + "\n")
             return best_match['url'], 'saavn'
-    
-    # 2. Fallback to YouTube
-    print("   [Hub] Saavn failed. Trying YouTube...")
-    
-    # Direct Fallback Query: "Title Artist Audio"
-    # Don't strip parentheses! User wants full title search.
+        else:
+            print(f"\n   ⚠️  [PIPELINE] STEP 4 — Best Saavn match has no stream URL. Falling back to YouTube.")
+
+    # ── STEP 5: YouTube fallback ──────────────────────────────
+    print(f"\n🎬 [PIPELINE] STEP 5 — Trying YouTube fallback …")
     yt_query = f"{search_term} Audio"
-    
-    print(f"   [Hub] YouTube Search Query: '{yt_query}'")
+    print(f"   YouTube Query: {yt_query!r}")
     yt_results = yt_engine.search_youtube(yt_query)
-    
-    if yt_results and len(yt_results) > 0:
-        # Take the FIRST result directly
-        first_video_url = yt_results[0]['url']
-        print(f"   [Hub] Selected YouTube Video: {yt_results[0]['title']}")
-        stream_url = yt_engine.resolve_yt_stream(first_video_url)
+
+    if yt_results:
+        first = yt_results[0]
+        print(f"   YouTube top result: '{first['title']}'")
+        stream_url = yt_engine.resolve_yt_stream(first['url'])
         if stream_url:
-            print("   [Match] Found on YouTube!")
+            print(f"   Stream URL: {stream_url[:80]}…")
+            print(f"\n✅ [PIPELINE] DONE — Sending YouTube stream to player")
+            print(SEP + "\n")
             return stream_url, 'youtube'
-    
+
+    print(f"\n❌ [PIPELINE] FAILED — No stream found from either source")
+    print(SEP + "\n")
     return None, None
+
 
 def search_hybrid(user_query, categorized=True, offset=0):
     """
@@ -231,6 +236,7 @@ def search_hybrid(user_query, categorized=True, offset=0):
         return saavn_engine.search_saavn(clean_query)
 
 def download_song(url, source):
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     print(f"--- HUB: Downloading from {source} ---")
     if source == 'saavn':
         return saavn_engine.download_saavn_file(url, DOWNLOAD_DIR)

@@ -15,9 +15,31 @@ function savePlaylists(playlists) {
 
 export function createPlaylist(name, id) {
     const playlists = getPlaylists();
+    if (playlists.length >= 8) {
+        throw new Error("Maximum 8 playlists allowed. Please delete one to free up space.");
+    }
+
+    let finalName = name.trim();
+    if (!finalName || finalName.toLowerCase().startsWith('new playlist')) {
+        // Auto-increment logic
+        let count = 1;
+        let generatedName = 'New Playlist 1';
+        // Keep checking until we find an unused generated name
+        while (playlists.some(p => p.name.toLowerCase() === generatedName.toLowerCase())) {
+            count++;
+            generatedName = `New Playlist ${count}`;
+        }
+        finalName = generatedName;
+    } else {
+        // User provided a manual name - validate it's unique
+        if (playlists.some(p => p.name.toLowerCase() === finalName.toLowerCase())) {
+            throw new Error(`A playlist named "${finalName}" already exists.`);
+        }
+    }
+
     const newPlaylist = {
         id: id || `pl_${Date.now()}`,
-        name: name.trim() || 'My Playlist',
+        name: finalName,
         createdAt: new Date().toISOString(),
         songs: [],
     };
@@ -29,7 +51,16 @@ export function createPlaylist(name, id) {
 export function renamePlaylist(playlistId, newName) {
     const playlists = getPlaylists();
     const pl = playlists.find(p => p.id === playlistId);
-    if (pl) pl.name = newName.trim() || pl.name;
+
+    const finalName = newName.trim();
+    if (!finalName) return; // ignore empty rename
+
+    if (pl && pl.name.toLowerCase() !== finalName.toLowerCase()) {
+        if (playlists.some(p => p.id !== playlistId && p.name.toLowerCase() === finalName.toLowerCase())) {
+            throw new Error(`A playlist named "${finalName}" already exists.`);
+        }
+        pl.name = finalName;
+    }
     savePlaylists(playlists);
 }
 

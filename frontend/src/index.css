@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -32,7 +34,8 @@
   }
 
   .dark {
-    --background: 0 0% 7%;
+    --background: 240 24% 6%;
+    /* #0b0b12 */
     --foreground: 0 0% 98%;
     --card: 0 0% 11%;
     --card-foreground: 0 0% 98%;
@@ -69,22 +72,27 @@
   }
 }
 
-/* Hide scrollbar for horizontal scroll sections */
 @layer utilities {
-  .scrollbar-hide {
+  .hscroll {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 16px;
+    /* Added extra padding for shadows and transform */
+  }
+
+  .hscroll::-webkit-scrollbar {
+    display: none;
+    height: 0;
+  }
+
+  .hscroll {
     -ms-overflow-style: none;
     /* IE and Edge */
     scrollbar-width: none;
     /* Firefox */
   }
 
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-    /* Chrome, Safari and Opera */
-  }
-}
-
-@layer utilities {
   @keyframes play-bar {
 
     0%,
@@ -94,6 +102,69 @@
 
     50% {
       height: 100%;
+    }
+  }
+
+  /* From vibe-mock.jsx */
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes eq0 {
+    from {
+      transform: scaleY(.2)
+    }
+
+    to {
+      transform: scaleY(1)
+    }
+  }
+
+  @keyframes eq1 {
+    from {
+      transform: scaleY(.5)
+    }
+
+    to {
+      transform: scaleY(.85)
+    }
+  }
+
+  @keyframes eq2 {
+    from {
+      transform: scaleY(.3)
+    }
+
+    to {
+      transform: scaleY(.95)
+    }
+  }
+
+  @keyframes pulseDot {
+
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1)
+    }
+
+    50% {
+      opacity: .35;
+      transform: scale(.6)
+    }
+  }
+
+  @keyframes wordIn {
+    from {
+      opacity: 0;
+      transform: translateY(52px) skewY(3.5deg)
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0) skewY(0)
     }
   }
 

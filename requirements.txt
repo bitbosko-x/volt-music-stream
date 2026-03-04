@@ -6,7 +6,7 @@ requests==2.31.0
 
 # YouTube Integration
 pytubefix==6.15.2
-yt-dlp==2024.12.23
+yt-dlp==2026.2.21
 
 # DES Encryption for JioSaavn
 pyDes==2.0.1

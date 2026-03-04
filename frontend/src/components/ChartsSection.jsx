@@ -1,15 +1,33 @@
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Play, ChevronRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { searchMusic } from '@/lib/api';
+import { AnimatedSectionHeader, AnimatedAlbumCard } from '@/components/AnimatedCards';
+import { Button } from '@/components/ui/button';
+import { ChevronRight } from 'lucide-react';
 
 export function ChartsSection({ onSongPlay, onViewAll }) {
     const navigate = useNavigate();
     const [songs, setSongs] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    // Get current playing track id to animate playing cards
+    const [currentPlayingId, setCurrentPlayingId] = useState(null);
+    const [isPlayerPlaying, setIsPlayerPlaying] = useState(false);
+    useEffect(() => {
+        const updatePlayingState = () => {
+            const track = JSON.parse(localStorage.getItem('currentTrack') || 'null');
+            const wasPlaying = localStorage.getItem('wasPlaying') === 'true';
+            setCurrentPlayingId(track?.search_term);
+            setIsPlayerPlaying(wasPlaying);
+        };
+        updatePlayingState();
+        window.addEventListener('playTrack', updatePlayingState);
+        const int = setInterval(updatePlayingState, 500);
+        return () => {
+            window.removeEventListener('playTrack', updatePlayingState);
+            clearInterval(int);
+        };
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
@@ -56,73 +74,42 @@ export function ChartsSection({ onSongPlay, onViewAll }) {
         return () => { isMounted = false; };
     }, []);
 
-    const handleViewAll = () => {
-        // Search for Hindi songs to show chart-like results
-        navigate('/?q=hindi+songs');
-    };
-
     if (loading) {
         return (
-            <div className="mb-8">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-semibold">Charts</h2>
-                        <Badge variant="secondary">Top Hindi</Badge>
-                    </div>
-                </div>
+            <section style={{ padding: "0 0 36px" }}>
+                <AnimatedSectionHeader title="Top Hindi Charts" sub="Loading..." />
                 <div className="flex gap-4 overflow-x-auto pb-4">
                     {[...Array(6)].map((_, i) => (
-                        <div key={i} className="flex-shrink-0 w-48 h-56 bg-accent animate-pulse rounded-lg" />
+                        <div key={i} className="flex-shrink-0 w-40 h-40 bg-accent animate-pulse rounded-lg" />
                     ))}
                 </div>
-            </div>
+            </section>
         );
     }
 
-    // Check if songs exist to avoid rendering empty container
     if (!songs || songs.length === 0) return null;
 
     return (
-        <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-semibold">Charts</h2>
-                    <Badge variant="secondary">Top Hindi</Badge>
-                </div>
-                <Button variant="ghost" size="sm" onClick={onViewAll} className="gap-1">
+        <section style={{ padding: "0 0 36px", position: "relative" }}>
+            <div className="flex justify-between items-end mb-4">
+                <AnimatedSectionHeader title="Top Hindi Charts" sub="Most popular Hindi songs" />
+                <Button variant="ghost" size="sm" onClick={onViewAll} className="gap-1 text-zinc-400 hover:text-white mb-4 -mt-2">
                     View All
                     <ChevronRight className="h-4 w-4" />
                 </Button>
             </div>
-            <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide">
+            <div className="hscroll">
                 {songs.map((song, idx) => (
-                    <Card
+                    <AnimatedAlbumCard
                         key={idx}
-                        onClick={() => onSongPlay && onSongPlay(song)}
-                        className="flex-shrink-0 w-48 p-4 hover:bg-accent transition-all cursor-pointer group relative"
-                    >
-                        <div className="relative aspect-square mb-3 overflow-hidden rounded-md">
-                            <img
-                                src={song.image}
-                                alt={song.title}
-                                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                            />
-                            {/* Play button overlay */}
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
-                                    <Play className="h-6 w-6 text-primary-foreground ml-1" fill="currentColor" />
-                                </div>
-                            </div>
-                            {/* Rank badge */}
-                            <div className="absolute top-2 left-2 w-8 h-8 rounded-full bg-black/70 flex items-center justify-center">
-                                <span className="text-white font-bold text-sm">{idx + 1}</span>
-                            </div>
-                        </div>
-                        <p className="font-semibold text-sm truncate">{song.title}</p>
-                        <p className="text-xs text-muted-foreground truncate">{song.artist}</p>
-                    </Card>
+                        wrapperClass={idx >= 3 ? 'hidden sm:block' : ''}
+                        item={{ ...song, img: song.image, artist: song.artist }}
+                        delay={idx % 10 * 65}
+                        isPlaying={currentPlayingId === song.search_term && isPlayerPlaying}
+                        onPlay={() => onSongPlay && onSongPlay(song)}
+                    />
                 ))}
             </div>
-        </div>
+        </section>
     );
 }

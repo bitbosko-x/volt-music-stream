@@ -5,6 +5,8 @@ export function MusicBars({ isPlaying, analyser }) {
     const containerRef = useRef(null);
     const animationRef = useRef(null);
     const prevBarsRef = useRef([]);
+    const peaksRef = useRef([]);
+    const peakDropRef = useRef([]);
 
     // Keep refs in sync with latest props so the rAF loop is never stale
     const isPlayingRef = useRef(isPlaying);
@@ -14,11 +16,11 @@ export function MusicBars({ isPlaying, analyser }) {
 
     const getBarCount = () => {
         const w = window.innerWidth;
-        if (w < 640) return 40;
-        if (w < 1024) return 70;
-        return 120;
+        if (w < 640) return 30; // Fewer bars on mobile to accommodate gaps
+        if (w < 1024) return 50;
+        return 75; // Substantially fewer bars than 120 so the gaps are clearly visible
     };
-    const BAR_GAP = 2;
+    const BAR_GAP = 6;
 
     // Start/stop the loop based on isPlaying
     useEffect(() => {
@@ -47,11 +49,22 @@ export function MusicBars({ isPlaying, analyser }) {
             const BAR_COUNT = getBarCount();
             if (prevBarsRef.current.length !== BAR_COUNT) {
                 prevBarsRef.current = new Array(BAR_COUNT).fill(0);
+                peaksRef.current = new Array(BAR_COUNT).fill(0);
+                peakDropRef.current = new Array(BAR_COUNT).fill(0);
             }
 
             const W = container.clientWidth;
             const H = container.clientHeight;
             ctx.clearRect(0, 0, W, H);
+
+            // Define vertical gradient matching the reference image from bottom to top
+            const gradient = ctx.createLinearGradient(0, H, 0, 0);
+            gradient.addColorStop(0, '#560bad'); // Slightly brighter/lighter Navy Purple base
+            gradient.addColorStop(0.2, '#4895ef'); // Brighter Neon Blue
+            gradient.addColorStop(0.4, '#4cc9f0'); // Neon Cyan
+            gradient.addColorStop(0.65, '#ffffff'); // Pure White (glowing mid-highs)
+            gradient.addColorStop(0.85, '#f72585'); // Neon Pink / Magenta
+            gradient.addColorStop(1, '#b5179e'); // Lighter Neon Violet at the very peaks
 
             // --- Read frequency data ---
             let dataArray = null;
@@ -70,11 +83,13 @@ export function MusicBars({ isPlaying, analyser }) {
                 if (dataArray) {
                     // Real analyser data — use logarithmic mapping for better sensitivity
                     const binCount = dataArray.length;
-                    const minBin = 1;
-                    const maxBin = Math.floor(binCount * 0.75);
+                    const minBin = 2; // Skip sub-bass noise floor
+                    const maxBin = Math.floor(binCount * 0.5); // Focus on musical frequencies up to mid-highs
                     const t = i / BAR_COUNT;
-                    const startBin = Math.floor(minBin + (maxBin - minBin) * t);
-                    const endBin = Math.max(startBin + 1, Math.floor(minBin + (maxBin - minBin) * ((i + 1) / BAR_COUNT)));
+                    const nextT = (i + 1) / BAR_COUNT;
+                    // Logarithmic curve for frequencies mapping
+                    const startBin = Math.floor(minBin + Math.pow(t, 2) * (maxBin - minBin));
+                    const endBin = Math.max(startBin + 1, Math.floor(minBin + Math.pow(nextT, 2) * (maxBin - minBin)));
 
                     let sum = 0, cnt = 0;
                     for (let b = startBin; b < endBin && b < binCount; b++) {
@@ -82,9 +97,14 @@ export function MusicBars({ isPlaying, analyser }) {
                         cnt++;
                     }
                     const avg = cnt > 0 ? sum / cnt : 0;
-                    // Linear-boosted normalization (not squared — more sensitive to quiet audio)
-                    const norm = Math.min(1, (avg / 255) * 1.8);
-                    target = norm * H * 0.85;
+
+                    // EQ compensation: lower frequencies don't get much multiplier to prevent pegging
+                    // Higher frequencies get a multiplier to stand out. And clear noise floor (-0.05).
+                    const eqMult = 0.8 + (i / BAR_COUNT) * 1.5;
+                    const norm = Math.max(0, Math.min(1, (avg / 255) * eqMult - 0.05));
+
+                    // Decrease max height multiplier to prevent bars from reaching too high (Trap Nation style is lower on screen)
+                    target = norm * H * 0.55;
 
                 } else if (playing) {
                     // Animated simulation — time-based wave, looks musical
@@ -97,24 +117,47 @@ export function MusicBars({ isPlaying, analyser }) {
                     target = Math.pow(n, 1.5) * H * 0.7;
                 }
 
-                // Smooth physics (lerp up fast, decay slow)
+                // Smooth physics (Trap Nation style - instant hit, bouncy smooth decay)
                 const prev = prevBarsRef.current[i] || 3;
                 const current = target > prev
-                    ? prev + (target - prev) * 0.15
-                    : prev * 0.92;
+                    ? prev + (target - prev) * 0.65 // Faster attack (jumps up quicker to beat)
+                    : prev * 0.90; // Slower, smoother decay (hangs in the air longer before falling)
                 const clamped = Math.min(H, Math.max(3, current));
                 prevBarsRef.current[i] = clamped;
 
+                // Update peak cap physics
+                const prevPeak = peaksRef.current[i] || clamped;
+                if (clamped >= prevPeak) {
+                    peaksRef.current[i] = clamped;
+                    peakDropRef.current[i] = 0;
+                } else {
+                    peakDropRef.current[i] = (peakDropRef.current[i] || 0) + 0.15; // Gravity
+                    peaksRef.current[i] = prevPeak - peakDropRef.current[i];
+                    if (peaksRef.current[i] < clamped) peaksRef.current[i] = clamped;
+                }
+                const peakClamped = Math.max(0, peaksRef.current[i]);
+
                 const x = i * (totalBarW + BAR_GAP);
-                const y = H - clamped;
 
-                // Original white fill
-                ctx.fillStyle = '#FFFFFF';
+                // Draw base segments
+                const SEG_H = 3;
+                const SEG_GAP = 1;
+                const SEG_TOT = SEG_H + SEG_GAP;
+                const segments = Math.floor(clamped / SEG_TOT);
 
-                ctx.beginPath();
-                if (ctx.roundRect) ctx.roundRect(x, y, totalBarW, clamped, 10);
-                else ctx.rect(x, y, totalBarW, clamped);
-                ctx.fill();
+                for (let s = 0; s < segments; s++) {
+                    const segY = H - (s * SEG_TOT) - SEG_H;
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(x, segY, totalBarW, SEG_H);
+                }
+
+                // Draw Peak Cap (glowing)
+                const peakY = H - peakClamped;
+                ctx.fillStyle = '#ffffff'; // White/hot center
+                ctx.shadowBlur = Math.min(10, clamped / 4); // Glow intensity scales with height
+                ctx.shadowColor = '#00f3ff'; // Glow color
+                ctx.fillRect(x, peakY - SEG_H, totalBarW, SEG_H);
+                ctx.shadowBlur = 0; // Reset
             }
 
             // Keep looping as long as playing
@@ -138,11 +181,8 @@ export function MusicBars({ isPlaying, analyser }) {
             const totalBarW = (W - (BAR_COUNT - 1) * BAR_GAP) / BAR_COUNT;
             for (let i = 0; i < BAR_COUNT; i++) {
                 const x = i * (totalBarW + BAR_GAP);
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-                ctx.beginPath();
-                if (ctx.roundRect) ctx.roundRect(x, H - 3, totalBarW, 3, 10);
-                else ctx.rect(x, H - 3, totalBarW, 3);
-                ctx.fill();
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+                ctx.fillRect(x, H - 3, totalBarW, 3);
             }
         }
 
@@ -153,7 +193,7 @@ export function MusicBars({ isPlaying, analyser }) {
     }, [isPlaying]); // ← only re-run on isPlaying changes; analyser is read via ref live each frame
 
     return (
-        <div ref={containerRef} className="w-full h-16 mb-0">
+        <div ref={containerRef} className="w-full h-24 mb-0">
             <canvas
                 ref={canvasRef}
                 className="w-full h-full block"

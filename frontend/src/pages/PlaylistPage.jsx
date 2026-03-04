@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { usePlaylist } from '@/context/PlaylistContext';
-import { getAudioStream } from '@/lib/api';
 import { Play, Shuffle, ArrowLeft, ListMusic, Trash2, Music, Pencil, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -28,25 +27,19 @@ export function PlaylistPage() {
         );
     }
 
-    const playTrack = async (song, queue, index) => {
-        try {
-            const { stream_url, source } = await getAudioStream(song.search_term);
-            window.dispatchEvent(new CustomEvent('playTrack', {
-                detail: {
-                    title: song.title,
-                    artist: song.artist,
-                    img: song.img || song.image,
-                    album: song.album || null,
-                    album_id: song.album_id || null,
-                    stream_url,
-                    source,
-                    queue,
-                    currentIndex: index,
-                }
-            }));
-        } catch (e) {
-            console.error('Failed to play', e);
-        }
+    const playTrack = (song, queue, index) => {
+        window.dispatchEvent(new CustomEvent('playTrack', {
+            detail: {
+                title: song.title,
+                artist: song.artist,
+                img: song.img || song.image,
+                album: song.album || null,
+                album_id: song.album_id || null,
+                search_term: song.search_term,
+                queue,
+                currentIndex: index,
+            }
+        }));
     };
 
     const handlePlayAll = () => {

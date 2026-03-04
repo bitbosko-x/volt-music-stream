@@ -19,8 +19,8 @@ export function useBackendHealth() {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-            // Lightweight probe — search endpoint with a tiny payload
-            const res = await fetch(`${API_BASE}/search?q=test`, {
+            // Lightweight probe — ping endpoint
+            const res = await fetch(`${API_BASE}/ping`, {
                 method: 'GET',
                 signal: controller.signal,
             });

@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getArtistSongs, getAudioStream } from '@/lib/api';
-import { SongCard } from '@/components/SongCard';
-import { AlbumCard } from '@/components/AlbumCard';
-import { CategorySection } from '@/components/CategorySection';
+import { getArtistSongs } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, User, Music, Disc } from 'lucide-react';
+import { ArrowLeft, User, AlertCircle, X, Play, Shuffle } from 'lucide-react';
+import { addRecentItem } from '@/components/RecentSearches';
+import {
+    SongListRow,
+    AlbumListRow,
+    AnimatedSectionHeader,
+} from '@/components/AnimatedCards';
 
 export function ArtistDetail() {
     const { artistName } = useParams();
@@ -13,6 +16,24 @@ export function ArtistDetail() {
     const [artist, setArtist] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showAllAlbums, setShowAllAlbums] = useState(false);
+    const [playError, setPlayError] = useState(null);
+
+    // Track playing state
+    const [currentPlayingId, setCurrentPlayingId] = useState(null);
+    const [isPlayerPlaying, setIsPlayerPlaying] = useState(false);
+
+    useEffect(() => {
+        const update = () => {
+            const track = JSON.parse(localStorage.getItem('currentTrack') || 'null');
+            const playing = localStorage.getItem('wasPlaying') === 'true';
+            setCurrentPlayingId(track?.search_term);
+            setIsPlayerPlaying(playing);
+        };
+        update();
+        window.addEventListener('playTrack', update);
+        const poll = setInterval(update, 500);
+        return () => { window.removeEventListener('playTrack', update); clearInterval(poll); };
+    }, []);
 
     useEffect(() => {
         const fetchArtist = async () => {
@@ -25,58 +46,49 @@ export function ArtistDetail() {
                 setLoading(false);
             }
         };
-
         fetchArtist();
     }, [artistName]);
 
-    const handlePlaySong = async (song, songIndex) => {
-        try {
-            const { stream_url, source } = await getAudioStream(song.search_term);
-
-            const trackData = {
+    const handlePlaySong = (song, songIndex) => {
+        addRecentItem({
+            type: 'song',
+            id: song.search_term,
+            title: song.title,
+            artist: song.artist,
+            image: song.image,
+            album: song.album || null,
+            album_id: song.album_id || null,
+            search_term: song.search_term,
+        });
+        window.dispatchEvent(new CustomEvent('playTrack', {
+            detail: {
                 title: song.title,
                 artist: song.artist,
                 img: song.image,
                 album: song.album || null,
                 album_id: song.album_id || null,
-                stream_url,
-                source,
-                queue: artist.songs,  // Send full artist songs as queue
-                currentIndex: songIndex,  // Current position in queue
-            };
-
-            window.dispatchEvent(new CustomEvent('playTrack', { detail: trackData }));
-        } catch (error) {
-            console.error('Failed to play song:', error);
-        }
+                search_term: song.search_term,
+                queue: artist.songs,
+                currentIndex: songIndex,
+            }
+        }));
     };
 
-    const handleShuffle = async () => {
-        if (!artist || artist.songs.length === 0) return;
-
-        // Shuffle the songs array
+    const handleShuffle = () => {
+        if (!artist?.songs?.length) return;
         const shuffled = [...artist.songs].sort(() => Math.random() - 0.5);
-        const firstSong = shuffled[0];
-
-        try {
-            const { stream_url, source } = await getAudioStream(firstSong.search_term);
-
-            const trackData = {
-                title: firstSong.title,
-                artist: firstSong.artist,
-                img: firstSong.image,
-                album: firstSong.album || null,
-                album_id: firstSong.album_id || null,
-                stream_url,
-                source,
-                queue: shuffled,  // Send shuffled queue
+        window.dispatchEvent(new CustomEvent('playTrack', {
+            detail: {
+                title: shuffled[0].title,
+                artist: shuffled[0].artist,
+                img: shuffled[0].image,
+                album: shuffled[0].album || null,
+                album_id: shuffled[0].album_id || null,
+                search_term: shuffled[0].search_term,
+                queue: shuffled,
                 currentIndex: 0,
-            };
-
-            window.dispatchEvent(new CustomEvent('playTrack', { detail: trackData }));
-        } catch (error) {
-            console.error('Failed to shuffle:', error);
-        }
+            }
+        }));
     };
 
     if (loading) {
@@ -95,79 +107,114 @@ export function ArtistDetail() {
         );
     }
 
+    const albumsToShow = showAllAlbums ? artist.albums : (artist.albums || []).slice(0, 5);
+
     return (
         <div className="container max-w-4xl mx-auto px-4 py-8 pb-32">
-            <Button variant="ghost" className="mb-6" onClick={() => navigate(-1)}>
+            {/* Play error toast */}
+            {playError && (
+                <div className="fixed top-4 right-4 z-[150] max-w-sm">
+                    <div className="flex items-start gap-3 bg-zinc-900 border border-red-800/50 text-sm text-red-300 px-4 py-3 rounded-xl shadow-2xl">
+                        <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                        <p className="flex-1">{playError}</p>
+                        <button onClick={() => setPlayError(null)} className="text-zinc-500 hover:text-zinc-300">
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            <Button variant="ghost" className="mb-6 text-white" onClick={() => navigate(-1)}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
             </Button>
 
+            {/* Artist Header */}
             <div className="text-center mb-8">
                 {artist.artist_image ? (
                     <img
                         src={artist.artist_image}
                         alt={artist.artist_name}
-                        className="w-48 h-48 rounded-full mx-auto mb-4 shadow-lg object-cover"
+                        className="w-36 h-36 sm:w-44 sm:h-44 rounded-full mx-auto mb-4 shadow-2xl object-cover ring-2 ring-white/10"
                     />
                 ) : (
-                    <div className="w-48 h-48 rounded-full mx-auto mb-4 bg-secondary flex items-center justify-center">
-                        <User className="h-24 w-24 text-muted-foreground" />
+                    <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full mx-auto mb-4 bg-zinc-800 flex items-center justify-center ring-1 ring-white/10">
+                        <User className="h-16 w-16 text-zinc-500" />
                     </div>
                 )}
-                <h1 className="text-3xl font-bold mb-2">{artist.artist_name}</h1>
+                <h1 className="text-3xl font-bold mb-1 text-white">{artist.artist_name}</h1>
                 {artist.genre && (
-                    <p className="text-xl text-muted-foreground mb-1">{artist.genre}</p>
+                    <p className="text-zinc-400 mb-1">{artist.genre}</p>
                 )}
-                <p className="text-sm text-muted-foreground mb-4">Top Songs</p>
+                <p className="text-sm text-zinc-500 mb-6">{artist.songs?.length} songs</p>
 
-                {/* Play All & Shuffle Buttons */}
-                <div className="flex items-center justify-center gap-3 mt-6">
+                {/* Play All & Shuffle */}
+                <div className="flex items-center justify-center gap-2 sm:gap-4 w-full max-w-xs sm:max-w-none mt-2">
                     <Button
-                        size="lg"
+                        size="default"
                         onClick={() => handlePlaySong(artist.songs[0], 0)}
-                        className="bg-primary hover:bg-primary/90"
+                        className="flex-1 sm:flex-none h-12 px-8 rounded-full bg-[#00f3ff] hover:bg-[#33f6ff] text-zinc-900 font-bold tracking-widest uppercase transition-all shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:shadow-[0_0_30px_rgba(0,243,255,0.5)] border-0 flex items-center gap-2"
                     >
-                        <svg className="h-5 w-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M8 5v14l11-7z" />
-                        </svg>
-                        Play All
+                        <Play className="h-5 w-5 fill-current" />
+                        Play
                     </Button>
                     <Button
-                        size="lg"
+                        size="default"
                         variant="outline"
                         onClick={handleShuffle}
+                        className="flex-1 sm:flex-none h-12 px-8 rounded-full border-2 border-white/20 text-white font-bold tracking-widest uppercase hover:bg-white/10 hover:border-white/40 transition-all flex items-center gap-2"
                     >
-                        <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h4l2.5 4L13 4h7m0 0v4m0-4l-5 5m5 11h-7l-2.5-4L8 20H4m16 0v-4m0 4l-5-5" />
-                        </svg>
+                        <Shuffle className="h-4 w-4" />
                         Shuffle
                     </Button>
                 </div>
             </div>
 
-            <CategorySection title="Top Songs" icon={<Music />} count={artist.songs.length}>
-                {artist.songs.map((song, idx) => (
-                    <SongCard key={idx} song={song} onPlay={() => handlePlaySong(song, idx)} />
-                ))}
-            </CategorySection>
-
-            {artist.albums && artist.albums.length > 0 && (
-                <CategorySection title="Albums" icon={<Disc />} count={artist.albums.length}>
-                    {(showAllAlbums ? artist.albums : artist.albums.slice(0, 5)).map((album, idx) => (
-                        <AlbumCard key={idx} album={album} />
+            {/* Top Songs */}
+            <div style={{ padding: '0 0 36px' }}>
+                <AnimatedSectionHeader title="Top Songs" sub={`${artist.songs.length} tracks`} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {artist.songs.map((song, idx) => (
+                        <SongListRow
+                            key={idx}
+                            song={{ ...song, img: song.image }}
+                            index={idx}
+                            delay={idx * 25}
+                            active={currentPlayingId === song.search_term && isPlayerPlaying}
+                            paused={currentPlayingId === song.search_term && !isPlayerPlaying}
+                            onSelect={() => handlePlaySong(song, idx)}
+                        />
                     ))}
+                </div>
+            </div>
+
+            {/* Albums */}
+            {artist.albums && artist.albums.length > 0 && (
+                <div style={{ padding: '0 0 36px' }}>
+                    <AnimatedSectionHeader title="Albums" sub={`${artist.albums.length} albums`} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {albumsToShow.map((album, idx) => (
+                            <AlbumListRow
+                                key={idx}
+                                album={{ ...album, img: album.image }}
+                                index={idx}
+                                delay={idx * 25}
+                                onClick={() => navigate(`/album/${album.album_id}`)}
+                            />
+                        ))}
+                    </div>
                     {artist.albums.length > 5 && (
                         <div className="flex justify-center mt-4">
                             <Button
                                 variant="outline"
                                 onClick={() => setShowAllAlbums(!showAllAlbums)}
-                                className="w-full md:w-auto"
+                                className="border-white/20 text-white hover:bg-white/10"
                             >
                                 {showAllAlbums ? 'Show Less' : `View All Albums (${artist.albums.length})`}
                             </Button>
                         </div>
                     )}
-                </CategorySection>
+                </div>
             )}
         </div>
     );

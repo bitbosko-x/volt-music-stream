@@ -1,0 +1,72 @@
+
+   ··················································
+   [Saavn+] 🔍 Query: 'Sing Me to Sleep Alan Walker', Artist Filter: ['Alan Walker']
+   [Saavn+] 🎯 Extracted Title: 'sing me to sleep', Artist: 'alan walker'
+   [Saavn+] 📦 Raw results from Saavn (10):
+      - 'Sing Me to Sleep' — Jesper Borgen, Alan Walker, Iselin Solheim, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen
+      - 'Sing Me to Sleep' — Alan Walker, Jesper Borgen, Anders Frøen, Iselin Solheim, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen
+      - 'Sing Me to Sleep (Marshmello Remix)' — Alan Walker, Jesper Borgen, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim
+      - 'Sing Me to Sleep (Instrumental)' — Alan Walker, Jesper Borgen, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim
+      - 'Sing Me to Sleep' — Tommy La Verdi, Anders Froen, Alan Walker, Jesper Borgen, Gunnar Greve, Iselin Solheim, Magnus Bertelsen, Natalie Gang, Anders Frøen
+      - 'Sing Me to Sleep (Alan Walker Cover)' — Jesper Borgen, Anders Frøen, Gunnar Greve, Alan Walker, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim, Lemongrass
+      - 'Sing Me To Sleep' — Jesper Borgen, Anders Frøen, Gunnar Greve Pettersen, Alan Walker, Robert Mendoza
+      - 'Sing Me to Sleep' — Jesper Borgen, Anders Froen, Gunnar Greve, Alan Walker, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim, We Rabbitz, Romy Wave, Anders Frøen, Gunnar Greve Pettersen
+      - 'Sing Me to Sleep' — Alan Walker, Vikki Leigh, Jesper Borgen, Anders Frøen, Gunnar Greve Pettersen, Romy Wave
+      - 'Sing Me To Sleep' — Magnus Bertelsen, VERDI THOMAS C LA, Iselin Solheim, Alan Walker, Jesper Borgen, Anders Froeen, Gunnar Greve, Tinorio, Anders Frøen, Gunnar Greve Pettersen, Romy Wave
+
+   [Saavn+] 📊 Ranked results after full evaluation:
+   🥇  Score: 244
+        'Sing Me to Sleep' — Alan Walker, Jesper Borgen, Anders Frøen, Iselin Solheim, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen
+   #2  Score: 164
+        'Sing Me to Sleep' — Alan Walker, Vikki Leigh, Jesper Borgen, Anders Frøen, Gunnar Greve Pettersen, Romy Wave
+   #3  Score: 144
+        'Sing Me to Sleep' — Jesper Borgen, Alan Walker, Iselin Solheim, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen
+   #4  Score: 144
+        'Sing Me to Sleep (Marshmello Remix)' — Alan Walker, Jesper Borgen, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim
+   #5  Score: 144
+        'Sing Me to Sleep (Instrumental)' — Alan Walker, Jesper Borgen, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim
+   #6  Score: 144
+        'Sing Me to Sleep' — Tommy La Verdi, Anders Froen, Alan Walker, Jesper Borgen, Gunnar Greve, Iselin Solheim, Magnus Bertelsen, Natalie Gang, Anders Frøen
+
+   [Saavn+] ✅ WINNER: 'Sing Me to Sleep' — 'Alan Walker, Jesper Borgen, Anders Frøen, Iselin Solheim, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen'
+   ··················································
+
+
+--- Test 1 ---
+Top Result: Sing Me to Sleep - Alan Walker, Jesper Borgen, Anders Frøen, Iselin Solheim, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen
+
+   ··················································
+   [Saavn+] 🔍 Query: 'Sing Me to Sleep Alan Walker', Artist Filter: None
+   [Saavn+] 🎯 Extracted Title: 'sing me to sleep alan walker', Artist: ''
+   [Saavn+] 📦 Raw results from Saavn (10):
+      - 'Sing Me to Sleep' — Jesper Borgen, Alan Walker, Iselin Solheim, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen
+      - 'Sing Me to Sleep' — Alan Walker, Jesper Borgen, Anders Frøen, Iselin Solheim, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen
+      - 'Sing Me to Sleep (Marshmello Remix)' — Alan Walker, Jesper Borgen, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim
+      - 'Sing Me to Sleep (Instrumental)' — Alan Walker, Jesper Borgen, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim
+      - 'Sing Me to Sleep' — Tommy La Verdi, Anders Froen, Alan Walker, Jesper Borgen, Gunnar Greve, Iselin Solheim, Magnus Bertelsen, Natalie Gang, Anders Frøen
+      - 'Sing Me to Sleep (Alan Walker Cover)' — Jesper Borgen, Anders Frøen, Gunnar Greve, Alan Walker, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim, Lemongrass
+      - 'Sing Me To Sleep' — Jesper Borgen, Anders Frøen, Gunnar Greve Pettersen, Alan Walker, Robert Mendoza
+      - 'Sing Me to Sleep' — Jesper Borgen, Anders Froen, Gunnar Greve, Alan Walker, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim, We Rabbitz, Romy Wave, Anders Frøen, Gunnar Greve Pettersen
+      - 'Sing Me to Sleep' — Alan Walker, Vikki Leigh, Jesper Borgen, Anders Frøen, Gunnar Greve Pettersen, Romy Wave
+      - 'Sing Me To Sleep' — Magnus Bertelsen, VERDI THOMAS C LA, Iselin Solheim, Alan Walker, Jesper Borgen, Anders Froeen, Gunnar Greve, Tinorio, Anders Frøen, Gunnar Greve Pettersen, Romy Wave
+
+   [Saavn+] 📊 Ranked results after full evaluation:
+   🥇  Score: 23
+        'Sing Me to Sleep' — Jesper Borgen, Alan Walker, Iselin Solheim, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen
+   #2  Score: 23
+        'Sing Me to Sleep' — Alan Walker, Jesper Borgen, Anders Frøen, Iselin Solheim, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen
+   #3  Score: 23
+        'Sing Me to Sleep' — Tommy La Verdi, Anders Froen, Alan Walker, Jesper Borgen, Gunnar Greve, Iselin Solheim, Magnus Bertelsen, Natalie Gang, Anders Frøen
+   #4  Score: -30
+        'Sing Me to Sleep (Marshmello Remix)' — Alan Walker, Jesper Borgen, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim
+   #5  Score: -31
+        'Sing Me to Sleep (Instrumental)' — Alan Walker, Jesper Borgen, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen, Iselin Solheim
+   #6  Score: -57
+        'Sing Me To Sleep' — Jesper Borgen, Anders Frøen, Gunnar Greve Pettersen, Alan Walker, Robert Mendoza
+
+   [Saavn+] ✅ WINNER: 'Sing Me to Sleep' — 'Jesper Borgen, Alan Walker, Iselin Solheim, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen'
+   ··················································
+
+
+--- Test 2 ---
+Top Result: Sing Me to Sleep - Jesper Borgen, Alan Walker, Iselin Solheim, Anders Frøen, Gunnar Greve, Tommy La Verdi, Magnus Bertelsen

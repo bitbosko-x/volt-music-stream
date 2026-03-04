@@ -1,79 +1,194 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card } from '@/components/ui/card';
-import { History, X } from 'lucide-react';
+import { History, X, Music, Disc, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+const RECENT_KEY = 'recentActivity';
+const MAX_ITEMS = 12;
+
+/** Utility: add an item to the recent activity list */
+export function addRecentItem(item) {
+    try {
+        const existing = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+        // Remove duplicates by id/name
+        const deduped = existing.filter(i => {
+            if (item.type === 'song') return i.id !== item.id || i.type !== item.type;
+            if (item.type === 'album') return i.id !== item.id || i.type !== item.type;
+            if (item.type === 'artist') return i.name !== item.name || i.type !== item.type;
+            return true;
+        });
+        const updated = [item, ...deduped].slice(0, MAX_ITEMS);
+        localStorage.setItem(RECENT_KEY, JSON.stringify(updated));
+    } catch (e) {
+        console.error('RecentSearches: Failed to save item', e);
+    }
+}
+
+const TYPE_META = {
+    song: { icon: Music, label: 'Song', color: '#00f3ff' },
+    album: { icon: Disc, label: 'Album', color: '#b5f000' },
+    artist: { icon: User, label: 'Artist', color: '#d060e8' },
+};
+
 export function RecentSearches({ onSearchClick }) {
-    const [searchHistory, setSearchHistory] = useState([]);
+    const navigate = useNavigate();
+    const [items, setItems] = useState([]);
 
-    useEffect(() => {
-        loadHistory();
-    }, []);
-
-    const loadHistory = () => {
-        const history = JSON.parse(localStorage.getItem('searchHistory') || '[]');
-        setSearchHistory(history.slice(0, 6)); // Show only first 6
+    const load = () => {
+        const data = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+        setItems(data);
     };
 
-    const removeFromHistory = (item, e) => {
+    useEffect(() => { load(); }, []);
+
+    const remove = (idx, e) => {
         e.stopPropagation();
-        let history = JSON.parse(localStorage.getItem('searchHistory') || '[]');
-        history = history.filter(h => h !== item);
-        localStorage.setItem('searchHistory', JSON.stringify(history));
-        loadHistory();
+        const data = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+        data.splice(idx, 1);
+        localStorage.setItem(RECENT_KEY, JSON.stringify(data));
+        setItems(data);
     };
 
-    const clearAllHistory = () => {
+    const clearAll = () => {
+        localStorage.removeItem(RECENT_KEY);
+        // Also clear old text-based search history for backwards compat
         localStorage.removeItem('searchHistory');
-        setSearchHistory([]);
+        setItems([]);
     };
 
-    if (searchHistory.length === 0) return null;
+    const handleClick = (item) => {
+        if (item.type === 'song') {
+            window.dispatchEvent(new CustomEvent('playTrack', {
+                detail: {
+                    title: item.title,
+                    artist: item.artist,
+                    img: item.image,
+                    album: item.album || null,
+                    album_id: item.album_id || null,
+                    search_term: item.search_term || item.id,
+                }
+            }));
+        } else if (item.type === 'album') {
+            navigate(`/album/${item.id}`);
+        } else if (item.type === 'artist') {
+            navigate(`/artist/${encodeURIComponent(item.name)}`);
+        }
+    };
+
+    if (items.length === 0) return null;
 
     return (
         <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold flex items-center gap-2">
-                    <History className="h-5 w-5" />
-                    Recently Searched
+                    <History className="h-5 w-5 text-primary" />
+                    Recent
                 </h2>
                 <Button
                     variant="ghost"
                     size="sm"
-                    onClick={clearAllHistory}
-                    className="text-muted-foreground hover:text-foreground"
+                    onClick={clearAll}
+                    className="text-muted-foreground hover:text-foreground text-xs"
                 >
                     Clear All
                 </Button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {searchHistory.map((item, idx) => (
-                    <Card
-                        key={idx}
-                        onClick={() => onSearchClick(item)}
-                        className="p-4 hover:bg-accent transition-all cursor-pointer group flex items-center justify-between"
-                    >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                <History className="h-5 w-5 text-primary" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="font-medium truncate text-sm">{item}</p>
-                                <p className="text-xs text-muted-foreground">Search query</p>
-                            </div>
-                        </div>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => removeFromHistory(item, e)}
-                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+            <div className="flex gap-3 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                {items.map((item, idx) => {
+                    const meta = TYPE_META[item.type] || TYPE_META.song;
+                    const Icon = meta.icon;
+                    const isArtist = item.type === 'artist';
+
+                    return (
+                        <div
+                            key={idx}
+                            onClick={() => handleClick(item)}
+                            className="relative flex-shrink-0 group cursor-pointer"
+                            style={{ width: 120 }}
                         >
-                            <X className="h-4 w-4" />
-                        </Button>
-                    </Card>
-                ))}
+                            {/* Thumbnail */}
+                            <div style={{
+                                width: 120, height: 120,
+                                borderRadius: isArtist ? '50%' : 12,
+                                overflow: 'hidden',
+                                background: '#1a1a2e',
+                                boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                                border: '1px solid rgba(255,255,255,0.07)',
+                                position: 'relative',
+                                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                            }}
+                                onMouseEnter={e => {
+                                    e.currentTarget.style.transform = 'scale(1.05) translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = `0 12px 30px rgba(0,0,0,0.6), 0 0 0 2px ${meta.color}44`;
+                                }}
+                                onMouseLeave={e => {
+                                    e.currentTarget.style.transform = '';
+                                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
+                                }}
+                            >
+                                {item.image ? (
+                                    <img
+                                        src={item.image}
+                                        alt={item.title || item.name}
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    />
+                                ) : (
+                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: meta.color, opacity: 0.5 }}>
+                                        <Icon size={40} />
+                                    </div>
+                                )}
+
+                                {/* Type badge overlay */}
+                                <div style={{
+                                    position: 'absolute', bottom: 6, left: 6,
+                                    display: 'flex', alignItems: 'center', gap: 3,
+                                    background: 'rgba(0,0,0,0.75)',
+                                    borderRadius: 20, padding: '2px 7px',
+                                    backdropFilter: 'blur(4px)',
+                                }}>
+                                    <Icon size={9} color={meta.color} />
+                                    <span style={{ fontSize: 9, color: meta.color, fontWeight: 700, letterSpacing: 0.5 }}>{meta.label.toUpperCase()}</span>
+                                </div>
+
+                                {/* Remove button */}
+                                <button
+                                    onClick={(e) => remove(idx, e)}
+                                    style={{
+                                        position: 'absolute', top: 5, right: 5,
+                                        background: 'rgba(0,0,0,0.7)',
+                                        border: 'none', borderRadius: '50%',
+                                        width: 22, height: 22,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        cursor: 'pointer', opacity: 0,
+                                        transition: 'opacity 0.2s',
+                                        color: '#fff',
+                                    }}
+                                    className="group-hover:!opacity-100"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </div>
+
+                            {/* Label */}
+                            <p style={{
+                                marginTop: 8, fontSize: 12, fontWeight: 600, color: '#ddd',
+                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                width: '100%', textAlign: isArtist ? 'center' : 'left',
+                                transition: 'color 0.2s',
+                            }}
+                                className="group-hover:text-white"
+                            >
+                                {item.title || item.name}
+                            </p>
+                            {(item.artist || item.subtitle) && (
+                                <p style={{ fontSize: 10, color: '#666', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: isArtist ? 'center' : 'left' }}>
+                                    {item.artist || item.subtitle}
+                                </p>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );

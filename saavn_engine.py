@@ -36,12 +36,22 @@ def fix_json(text):
 def fix_title(title):
     return title.replace("&quot;", '"').replace("&#039;", "'").replace("&amp;", "&")
 
+# Bracket content that is just noise and should be stripped from the search query.
+# Music-relevant content like [Remix], [Cover], [Acoustic] must NOT be removed.
+_NOISE_BRACKETS = re.compile(
+    r'\[(Official.*?|Music Video|Video|Audio|HD|HQ|4K|MV|Visualizer|Lyric.*?|Explicit)\]',
+    re.IGNORECASE
+)
+
 def clean_saavn_query(query):
     """Simplifies the query for Saavn's search API."""
     # Remove symbols that choke Saavn's search
     q = query.replace('&', ' ').replace(',', ' ').replace(' - ', ' ')
     q = q.replace('(', ' ').replace(')', ' ').replace('@', ' ')
-    q = re.sub(r'\[.*?\]', '', q) # Remove anything in brackets (usually just [Official Video])
+    # Only strip known non-music bracket content; keep [Remix], [Cover], [Acoustic], etc.
+    q = _NOISE_BRACKETS.sub(' ', q)
+    # Expand any remaining brackets so Saavn can tokenise the words inside
+    q = q.replace('[', ' ').replace(']', ' ')
     return ' '.join(q.split())
 
 @smart_cache(ttl=3600, validator=lambda x: x and len(x) > 0)
@@ -68,9 +78,12 @@ def search_saavn(query):
         print(f"   [Saavn] Found {len(results) if results else 0} raw results")
         
         # 2. FALLBACK: If 0 results, try even simpler query (Title + First Artist)
-        if not results and ('&' in query or ',' in query):
-            # Split by & or , or 'feat' and take the first part
-            lite_query = re.split(r'&|,|feat', query)[0].strip()
+        if not results and ('&' in query or ',' in query or 'feat' in query.lower() or 'ft.' in query.lower()):
+            # Extract title and main artist (remove featured artist)
+            # Handle patterns like "Title feat. Featured Artist Main Artist" or "Title (feat. Featured) Main Artist"
+            lite_query = re.sub(r'\(feat\.?[^)]*\)|feat\.?[^,]*[,]|\(ft\.?[^)]*\)|ft\.?[^,]*[,]', '', query, flags=re.IGNORECASE)
+            lite_query = lite_query.replace('(', ' ').replace(')', ' ')
+            lite_query = ' '.join(lite_query.split())
             print(f"   [Saavn] No results. Trying Lite Search: '{lite_query}'")
             resp = requests.get("https://www.jiosaavn.com/api.php", params={
                 "__call": "search.getResults", "_format": "json", "q": lite_query, "n": "10", "p": "1", "_marker": "0", "ctx": "web6dot0"
@@ -96,21 +109,35 @@ def search_saavn(query):
                         print(f"   [Saavn] Failed to decrypt URL for: {s.get('song', 'Unknown')}")
                         continue
                         
-                    hq_url = raw_url.replace("_96.mp4", "_320.mp4").replace("_160.mp4", "_320.mp4")
+                    # Upgrade to 160kbps which is much safer than 320kbps for obscure tracks
+                    hq_url = raw_url.replace("_96.mp4", "_160.mp4")
                     
                     #  PRIORITY: artistMap (performers) > subtitle > music (songwriters/composers)
                     artist = ""
                     
-                    # 1. Try artistMap first (contains all contributors)
+                    # 1. Try artistMap first.
+                    # Saavn's artistMap groups: 'primary_artists', 'featured_artists', 'artists'.
+                    # The 'artists' group contains SONGWRITERS / PRODUCERS — we skip it.
+                    # We only want performers: primary + featured.
                     if s.get('artistMap'):
                         artists_list = s.get('artistMap', {})
                         if isinstance(artists_list, dict):
-                            # Use all artists - the fuzzy matcher will handle truncation
-                            artist = ', '.join(artists_list.keys())
-                    
-                    # 2. Fallback to subtitle or music field
+                            names = []
+                            seen_lower = set()
+                            for key in ('primary_artists', 'featured_artists'):
+                                for a in artists_list.get(key, []):
+                                    if isinstance(a, dict) and a.get('name'):
+                                        n = a['name']
+                                        if n.lower() not in seen_lower:
+                                            names.append(n)
+                                            seen_lower.add(n.lower())
+                            if names:
+                                artist = ', '.join(names)
+
+                    # 2. Fallback: subtitle has performer names (e.g. "Post Malone, Morgan Wallen").
+                    # Prefer it over `music`, which Saavn uses for SONGWRITERS.
                     if not artist:
-                        artist = s.get('more_info', {}).get('music', '') or s.get('subtitle', '') or s.get('music', '')
+                        artist = s.get('subtitle', '') or s.get('more_info', {}).get('primary_artists', '') or s.get('music', '')
                     
                     songs.append({
                         "title": fix_title(s['song']),
@@ -141,7 +168,10 @@ def search_saavn(query):
 JUNK_KEYWORDS = [
     "karaoke", "cover", "instrumental", "remix",
     "originally performed", "tribute", "vibe2vibe",
-    "soundtrack wonder", "backing", "cover mix"
+    "soundtrack wonder", "backing", "cover mix",
+    "jersey club", "jersey remix", "jersey mix",
+    "club mix", "club remix", "drill remix",
+    "sped up", "slowed", "lofi", "lo-fi", "nightcore"
 ]
 
 # Album image CDN priority (higher priority = lower rank number)
@@ -166,68 +196,147 @@ def rank_result(result: dict) -> int:
             return i
     return len(IMAGE_PRIORITY)  # lowest priority
 
+def _artist_words_match(query_artist: str, track_artist_str: str) -> bool:
+    """
+    Word-level artist match. Returns True if ALL words of query_artist appear
+    in the full track artist string (case-insensitive). This prevents 'al'
+    from matching 'Alan Walker', while still matching 'alan walker' in
+    'alan walker, isak' correctly.
+    """
+    q_words = set(re.sub(r"[^a-z0-9 ]", "", query_artist.lower()).split())
+    t_words = set(re.sub(r"[^a-z0-9 ]", "", track_artist_str.lower()).split())
+    return bool(q_words) and q_words.issubset(t_words)
+
+
 def search_saavn_enhanced(query, artist_filter=None):
     """
-    Search Saavn with enhanced filtering for strict artist matching and quality control.
-    
-    Args:
-        query: Search query
-        artist_filter: List/Set of artist names to strictly require (optional)
+    Clean search pipeline to find the original track based on title matching and artist scoring.
     """
-    cleaned_query = clean_saavn_query(query)
-    print(f"   [Saavn+] Searching Enhanced: '{cleaned_query}' (Filter: {artist_filter})")
-    
-    # 1. Get Raw Results
+    import difflib
+    SEP = "·" * 50
+    print(f"\n   {SEP}")
+    print(f"   [Saavn+] 🔍 Query: '{query}', Artist Filter: {artist_filter}")
+
+    # ── 1. Extract query_title and query_artist ───────────────
+    query_lower = query.lower()
+    query_artists = [a.strip().lower() for a in (artist_filter or []) if a]
+    query_artist = query_artists[0] if query_artists else ""
+
+    # Remove ALL known artist names from query to isolate the title
+    # Use word-boundary regex so 'al' won't strip from 'alan'
+    query_title = query_lower
+    for qa in query_artists:
+        # Build a safe word-boundary pattern from the artist name
+        escaped = re.escape(qa)
+        query_title = re.sub(rf'\b{escaped}\b', ' ', query_title, flags=re.IGNORECASE)
+
+    # Clean up any leftover noise (trailing dashes, extra spaces)
+    query_title = re.sub(r'[\-\:]', ' ', query_title)
+    query_title = ' '.join(query_title.split()).strip()
+
+    print(f"   [Saavn+] 🎯 Extracted Title: '{query_title}', Artist: '{query_artist}'")
+
+    # ── 2. Fetch raw results ──────────────────────────────────
     raw_results = search_saavn(query)
     if not raw_results:
+        print("   [Saavn+] ❌ No raw results from Saavn.")
         return []
-        
-    filtered = []
-    
-    # 2. Filter Logic
-    for res in raw_results:
-        # Junk Check
-        if is_junk(res) and "remix" not in query.lower() and "cover" not in query.lower():
-            print(f"   [Saavn+] Skipping Junk: {res['title']}")
-            continue
-            
-        # Strict Artist Check (if filter provided)
-        if artist_filter:
-            res_artist_lower = res['artist'].lower()
-            # Check if ANY of the required artists are present
-            # We treat artist_filter as a list of independent artists (e.g. ['Post Malone', 'Swae Lee'])
-            # Only one needs to match to consider it valid? Or ALL?
-            # User logic was: has_post AND has_swae.
-            # But generic logic should be: if I searched for "Post Malone", result MUST have "Post Malone".
-            
-            # Let's tokenize.
-            def get_tokens(text): return set(re.split(r'[\s,&]+', text.lower()))
-            
-            res_tokens = get_tokens(res_artist_lower)
-            filter_tokens = set()
-            for a in artist_filter:
-                filter_tokens.update(get_tokens(a))
-            
-            # Remove common small words
-            filter_tokens.discard('the')
-            filter_tokens.discard('and')
-            
-            # Intersection check: Do we have overlap?
-            if not res_tokens.intersection(filter_tokens):
-                 print(f"   [Saavn+] Skipping Artist Mismatch: '{res['artist']}'")
-                 continue
-        
-        filtered.append(res)
-        
-    # 3. Fallback
-    if not filtered:
-        print("   [Saavn+] Strict filter removed all results. Returning raw top result.")
-        return raw_results
-        
-    # 4. Rank by Image Priority (Soundtrack Check)
-    filtered.sort(key=rank_result)
-    
-    return filtered
+
+    print(f"   [Saavn+] 📦 Raw results from Saavn ({len(raw_results)}):")
+    for r in raw_results:
+        print(f"      - '{r['title']}' — '{r['artist']}'")
+
+    # ── 3. Score each result ──────────────────────────────────
+    version_keywords = ['remix', 'mix', 'acoustic', 'cover', 'instrumental', 'slowed', 'sped', 'lofi', 'nightcore']
+    # IMPORTANT: check the ORIGINAL query (not just query_title) so that
+    # version info in brackets like [Joe Stone Remix] is still detected
+    # even after the artist name has been stripped from query_title.
+    query_wants_version = any(kw in query.lower() for kw in version_keywords)
+
+    scored = []
+    for track in raw_results:
+        track_title = track["title"].lower()
+        track_artist_str = track["artist"].lower()
+
+        score = 0
+
+        # ── PASS 1: Title matching ────────────────────────────
+        track_has_version = any(kw in track_title for kw in version_keywords)
+        if track_has_version and not query_wants_version:
+            score -= 50
+        elif not track_has_version and query_wants_version:
+            score -= 50
+
+        if track_title == query_title:
+            score += 100
+        elif query_title and query_title in track_title:
+            # Partial containment — penalise proportional to extra length
+            extra_ratio = len(track_title) / max(len(query_title), 1)
+            score += max(20, int(50 / extra_ratio))
+        else:
+            ratio = difflib.SequenceMatcher(None, query_title, track_title).ratio()
+            score += int(ratio * 40)
+
+        # ── PASS 2: Artist matching ───────────────────────────
+        if query_artist:
+            if _artist_words_match(query_artist, track_artist_str):
+                score += 50
+                # Extra boost if primary artist (first in the comma-separated list)
+                primary_artist = re.split(r'[,&]', track_artist_str)[0].strip()
+                if _artist_words_match(query_artist, primary_artist):
+                    score += 50
+            else:
+                # Artist specified but not found — strong penalty
+                score -= 150
+
+        # Extra reward if ALL query artists appear in the track
+        if len(query_artists) > 1:
+            matches = sum(1 for qa in query_artists if _artist_words_match(qa, track_artist_str))
+            score += matches * 20
+
+        # ── PASS 3: Cover / karaoke artist penalties ──────────
+        cover_kws = ["cover", "tribute", "karaoke", "we rabbitz", "romy wave",
+                     "robert mendoza", "lemongrass", "vibe2vibe"]
+        if any(kw in track_artist_str for kw in cover_kws) and "cover" not in query.lower():
+            score -= 80
+
+        # ── PASS 4: Title-based junk keywords ────────────────
+        if is_junk(track) and not query_wants_version:
+            score -= 60
+
+        # ── PASS 5: Image / album priority (tie-breaker) ──────
+        score -= rank_result(track) * 2
+
+        scored.append({"track": track, "score": score})
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+
+    # ── 4. Logging ────────────────────────────────────────────
+    print(f"\n   [Saavn+] 📊 Ranked results after full evaluation:")
+    for i, r in enumerate(scored[:6]):
+        marker = "🥇" if i == 0 else f"#{i+1}"
+        print(f"   {marker}  Score: {r['score']}")
+        print(f"        '{r['track']['title']}' — '{r['track']['artist']}'")
+
+    # ── 5. Filter: only keep results that cleared the bar ─────
+    # For remix/version queries the artist match is looser (the remixer may not
+    # be in artist_filter), so we use a softer threshold (-100 vs -50).
+    threshold = -100 if query_wants_version else -50
+    final_results = [r["track"] for r in scored if r["score"] > threshold]
+
+    if final_results:
+        best = final_results[0]
+        print(f"\n   [Saavn+] ✅ WINNER: '{best['title']}' — '{best['artist']}'")
+    else:
+        print(f"\n   [Saavn+] ❌ No results cleared threshold. Falling back to raw results.")
+        final_results = raw_results  # Safety net — never return empty if Saavn had anything
+    print(f"   {SEP}\n")
+
+    return final_results
+
+
+
+
 
 def download_saavn_file(url, path):
     """Directly downloads MP4 from Saavn CDN"""
