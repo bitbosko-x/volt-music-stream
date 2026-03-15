@@ -1,8 +1,112 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { usePlaylist } from '@/context/PlaylistContext';
 import { Play, Shuffle, ArrowLeft, ListMusic, Trash2, Music, Pencil, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SongListRow } from '@/components/cards/AnimatedCards';
+
+// Hook to track which song is currently playing
+function useCurrentPlaying() {
+    const [currentId, setCurrentId] = useState(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentIndex, setCurrentIndex] = useState(null);
+
+    useEffect(() => {
+        const onTrackChange = (e) => {
+            setCurrentId(e.detail?.search_term ?? null);
+            setCurrentIndex(e.detail?.currentIndex ?? null);
+            setIsPlaying(true);
+        };
+        const onPlayState = (e) => setIsPlaying(e.detail?.playing ?? false);
+        window.addEventListener('trackChanged', onTrackChange);
+        window.addEventListener('playerPlayState', onPlayState);
+        return () => {
+            window.removeEventListener('trackChanged', onTrackChange);
+            window.removeEventListener('playerPlayState', onPlayState);
+        };
+    }, []);
+
+    return { currentId, isPlaying, currentIndex };
+}
+
+// Swipeable row — swipe left to reveal delete button on mobile
+function SwipeableSongRow({ song, index, active, paused, onSelect, onRemove }) {
+    const [offset, setOffset] = useState(0);
+    const [swiping, setSwiping] = useState(false);
+    const startX = useRef(null);
+    const THRESHOLD = 80; // px to trigger delete reveal
+
+    const onTouchStart = useCallback((e) => {
+        startX.current = e.touches[0].clientX;
+        setSwiping(true);
+    }, []);
+
+    const onTouchMove = useCallback((e) => {
+        if (startX.current === null) return;
+        const dx = e.touches[0].clientX - startX.current;
+        if (dx < 0) setOffset(Math.max(dx, -110));  // only left swipe, max 110px
+    }, []);
+
+    const onTouchEnd = useCallback(() => {
+        setSwiping(false);
+        if (offset < -THRESHOLD) {
+            setOffset(-110); // snap open
+        } else {
+            setOffset(0); // snap closed
+        }
+        startX.current = null;
+    }, [offset]);
+
+    const closeSwipe = () => setOffset(0);
+
+    return (
+        <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 14 }}>
+            {/* Delete button revealed on swipe */}
+            <div
+                style={{
+                    position: 'absolute', right: 0, top: 0, bottom: 0,
+                    width: 100,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'rgba(220, 38, 38, 0.85)',
+                    borderRadius: 14,
+                    zIndex: 0,
+                    transition: swiping ? 'none' : 'opacity 0.2s',
+                    opacity: offset < -10 ? 1 : 0,
+                }}
+            >
+                <button
+                    onClick={(e) => { e.stopPropagation(); onRemove(); closeSwipe(); }}
+                    style={{ color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, fontSize: 11 }}
+                >
+                    <Trash2 style={{ width: 20, height: 20 }} />
+                    Remove
+                </button>
+            </div>
+
+            {/* Row content — slides left */}
+            <div
+                style={{
+                    transform: `translateX(${offset}px)`,
+                    transition: swiping ? 'none' : 'transform 0.25s ease',
+                    position: 'relative', zIndex: 1,
+                }}
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                onClick={offset !== 0 ? closeSwipe : undefined}
+            >
+                <SongListRow
+                    song={song}
+                    index={index}
+                    delay={index * 30}
+                    active={active}
+                    paused={paused}
+                    onSelect={onSelect}
+                />
+            </div>
+        </div>
+    );
+}
 
 export function PlaylistPage() {
     const { id } = useParams();
@@ -10,6 +114,7 @@ export function PlaylistPage() {
     const { playlists, renamePlaylist, deletePlaylist, removeSongFromPlaylist } = usePlaylist();
     const [editingName, setEditingName] = useState(false);
     const [nameInput, setNameInput] = useState('');
+    const { currentId, isPlaying, currentIndex } = useCurrentPlaying();
 
     const playlist = playlists.find(p => p.id === id);
 
@@ -135,10 +240,19 @@ export function PlaylistPage() {
 
                     {/* Controls */}
                     <div className="flex items-center gap-3 flex-wrap">
-                        <Button onClick={handlePlayAll} disabled={!playlist.songs.length} className="gap-2 px-6">
+                        <Button
+                            onClick={handlePlayAll}
+                            disabled={!playlist.songs.length}
+                            className="gap-2 px-6 h-11 rounded-full bg-[#00f3ff] hover:bg-[#33f6ff] text-zinc-900 font-bold tracking-widest uppercase shadow-[0_0_20px_rgba(0,243,255,0.3)] hover:shadow-[0_0_30px_rgba(0,243,255,0.5)] border-0"
+                        >
                             <Play className="h-4 w-4 fill-current" /> Play All
                         </Button>
-                        <Button onClick={handleShuffle} disabled={!playlist.songs.length} variant="outline" className="gap-2">
+                        <Button
+                            onClick={handleShuffle}
+                            disabled={!playlist.songs.length}
+                            variant="outline"
+                            className="gap-2 h-11 rounded-full border-2 border-white/20 text-white font-bold tracking-widest uppercase hover:bg-white/10 hover:border-white/40"
+                        >
                             <Shuffle className="h-4 w-4" /> Shuffle
                         </Button>
                         <Button
@@ -162,34 +276,32 @@ export function PlaylistPage() {
                     <p className="text-sm">No songs yet. Hit <strong>+</strong> on any track to add it here.</p>
                 </div>
             ) : (
-                <div className="flex flex-col gap-1">
-                    {playlist.songs.map((song, idx) => (
-                        <div
-                            key={idx}
-                            className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-accent transition-colors group cursor-pointer"
-                            onClick={() => playTrack(song, playlist.songs, idx)}
-                        >
-                            <span className="text-xs text-muted-foreground w-5 text-center shrink-0 group-hover:hidden">{idx + 1}</span>
-                            <Play className="h-3.5 w-3.5 text-primary hidden group-hover:block shrink-0 fill-current" />
-                            <img
-                                src={song.img || song.image}
-                                alt={song.title}
-                                className="w-10 h-10 rounded-md object-cover shrink-0"
-                            />
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold truncate">{song.title}</p>
-                                <p className="text-xs text-muted-foreground truncate">{song.artist}</p>
-                            </div>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); removeSongFromPlaylist(id, song); }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive p-1.5 rounded-full hover:bg-destructive/10"
-                                title="Remove from playlist"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        </div>
-                    ))}
-                </div>
+                <>
+                    {/* Desktop hint */}
+                    <p className="hidden md:block text-xs text-zinc-600 mb-3">Hover a row and click <strong>✕</strong> to remove a song.</p>
+                    {/* Mobile hint */}
+                    <p className="md:hidden text-xs text-zinc-600 mb-3">Swipe left on a song to remove it.</p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {playlist.songs.map((song, idx) => {
+                            const normalizedSong = { ...song, img: song.img || song.image };
+                            const isActive = currentId === song.search_term && isPlaying;
+                            const isPaused = currentId === song.search_term && !isPlaying;
+
+                            return (
+                                <SwipeableSongRow
+                                    key={`${song.search_term}-${idx}`}
+                                    song={normalizedSong}
+                                    index={idx}
+                                    active={isActive}
+                                    paused={isPaused}
+                                    onSelect={() => playTrack(song, playlist.songs, idx)}
+                                    onRemove={() => removeSongFromPlaylist(id, song)}
+                                />
+                            );
+                        })}
+                    </div>
+                </>
             )}
         </div>
     );

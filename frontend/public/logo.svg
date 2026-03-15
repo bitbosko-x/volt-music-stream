@@ -1,0 +1,43 @@
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="eqGradient" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#ff3300" />
+      <stop offset="50%" stop-color="#ff7b00" />
+      <stop offset="100%" stop-color="#ffcc00" />
+    </linearGradient>
+    <clipPath id="rightHalf">
+      <rect x="50" y="0" width="50" height="100" />
+    </clipPath>
+  </defs>
+
+  <!-- Left Side: EQ Bars -->
+  <g stroke="url(#eqGradient)" stroke-width="10" stroke-dasharray="8 4" stroke-linecap="square">
+    <line x1="15" y1="50" x2="15" y2="90" />
+    <line x1="30" y1="20" x2="30" y2="90" />
+    <line x1="45" y1="35" x2="45" y2="90" />
+  </g>
+
+  <!-- Fill in the gaps at the bottom to ground it -->
+  <rect x="10" y="86" width="10" height="8" fill="#ff3300" />
+  <rect x="25" y="86" width="10" height="8" fill="#ff3300" />
+  <rect x="40" y="86" width="10" height="8" fill="#ff3300" />
+
+  <!-- Right Side: Half Vinyl -->
+  <g clip-path="url(#rightHalf)">
+    <g>
+      <!-- Base Vinyl -->
+      <circle cx="50" cy="50" r="40" fill="white" />
+      
+      <!-- Inner Grooves -->
+      <circle cx="50" cy="50" r="32" fill="none" stroke="#f0f0f0" stroke-width="1" />
+      <circle cx="50" cy="50" r="28" fill="none" stroke="#e0e0e0" stroke-width="2" />
+      <circle cx="50" cy="50" r="23" fill="none" stroke="#d0d0d0" stroke-width="1.5" />
+      
+      <!-- Center Hole Array -->
+      <circle cx="50" cy="50" r="14" fill="#09090b" />
+      <circle cx="50" cy="50" r="4" fill="white" />
+    </g>
+  </g>
+
+  <line x1="50" y1="10" x2="50" y2="90" stroke="#09090b" stroke-width="4" />
+</svg>

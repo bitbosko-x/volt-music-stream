@@ -3,12 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getArtistSongs } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, User, AlertCircle, X, Play, Shuffle } from 'lucide-react';
-import { addRecentItem } from '@/components/RecentSearches';
+import { addRecentItem } from '@/components/shared/RecentSearches';
 import {
     SongListRow,
     AlbumListRow,
     AnimatedSectionHeader,
-} from '@/components/AnimatedCards';
+} from '@/components/cards/AnimatedCards';
 
 export function ArtistDetail() {
     const { artistName } = useParams();
@@ -68,6 +68,7 @@ export function ArtistDetail() {
                 album: song.album || null,
                 album_id: song.album_id || null,
                 search_term: song.search_term,
+                playedIndex: songIndex,
                 queue: artist.songs,
                 currentIndex: songIndex,
             }

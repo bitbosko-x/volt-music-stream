@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { SearchBar } from '@/components/SearchBar';
-import { RecentSearches, addRecentItem } from '@/components/RecentSearches';
+import { SearchBar } from '@/components/shared/SearchBar';
+import { RecentSearches, addRecentItem } from '@/components/shared/RecentSearches';
 import { Button } from '@/components/ui/button';
 import { searchMusic, getCategorySongs } from '@/lib/api';
-import { Music, Disc, User, ListMusic, Plus, AlertCircle, X, Zap, Play, Shuffle, Search } from 'lucide-react';
-import { SkeletonCard } from '@/components/SkeletonCard';
+import { Music, Disc, User, ListMusic, Plus, AlertCircle, X, Zap, Play, Shuffle } from 'lucide-react';
+import { SkeletonCard } from '@/components/cards/SkeletonCard';
 import { usePlaylist } from '@/context/PlaylistContext';
-import { AnimatedLogo } from '@/components/AnimatedLogo';
+import { AnimatedLogo } from '@/components/shared/AnimatedLogo';
 
 import {
     AnimatedAlbumCard,
@@ -17,20 +17,21 @@ import {
     AnimatedSectionHeader,
     SongListRow,
     AlbumListRow,
-} from '@/components/AnimatedCards';
+} from '@/components/cards/AnimatedCards';
 
 // Restored old components
-import { FeaturedCategories } from '@/components/FeaturedCategories';
-import { PopularAlbums } from '@/components/PopularAlbums';
-import { TopGlobalArtists } from '@/components/TopGlobalArtists';
-import { ChartsSection } from '@/components/ChartsSection';
-import { CategorySection } from '@/components/CategorySection';
-import { SongCard } from '@/components/SongCard';
-import { AlbumCard } from '@/components/AlbumCard';
-import { ArtistCard } from '@/components/ArtistCard';
-import { FocusSection } from '@/components/FocusSection';
-import { RecentHindiReleases } from '@/components/RecentHindiReleases';
-import { NoCopyrightSection } from '@/components/NoCopyrightSection';
+import { FeaturedCategories } from '@/components/home/FeaturedCategories';
+import { PopularAlbums } from '@/components/home/PopularAlbums';
+import { TopGlobalArtists } from '@/components/home/TopGlobalArtists';
+import { ChartsSection } from '@/components/home/ChartsSection';
+import { CategorySection } from '@/components/home/CategorySection';
+import { SongCard } from '@/components/cards/SongCard';
+import { AlbumCard } from '@/components/cards/AlbumCard';
+import { ArtistCard } from '@/components/cards/ArtistCard';
+import { FocusSection } from '@/components/home/FocusSection';
+import { RecentHindiReleases } from '@/components/home/RecentHindiReleases';
+import { NoCopyrightSection } from '@/components/home/NoCopyrightSection';
+import { ArtistImage } from '@/components/shared/ArtistImage';
 
 export function Home() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -76,12 +77,14 @@ export function Home() {
 
     // Get current playing track id from localStorage to animate playing cards
     const [currentPlayingId, setCurrentPlayingId] = useState(null);
+    const [currentPlayingIndex, setCurrentPlayingIndex] = useState(null);
     const [isPlayerPlaying, setIsPlayerPlaying] = useState(false);
     useEffect(() => {
         const updatePlayingState = () => {
             const track = JSON.parse(localStorage.getItem('currentTrack') || 'null');
             const wasPlaying = localStorage.getItem('wasPlaying') === 'true';
             setCurrentPlayingId(track?.search_term);
+            setCurrentPlayingIndex(track?.playedIndex ?? null);
             setIsPlayerPlaying(wasPlaying);
         };
         updatePlayingState();
@@ -108,23 +111,30 @@ export function Home() {
         const queryParam = searchParams.get('q');
 
         // Prevent duplicate search for same query
-        if (queryParam && !currentCategory) {
+        if (queryParam) {
+            // Forcefully clear currentCategory if the user executes a search from the navbar
+            if (currentCategory) {
+                setCurrentCategory(null);
+            }
             if (lastSearchRef.query !== queryParam) {
                 lastSearchRef.query = queryParam;
                 setQuery(queryParam);
                 setSearchError(null);
                 executeSearch(queryParam, 0);
             }
-        } else if (!queryParam && !currentCategory) {
-            // Reset to home if no query and no category (Back button pressed)
+        } else if (!queryParam) {
+            // Reset to home if no query
             if (results !== null) {
                 setResults(null);
                 setQuery('');
                 setSearchError(null);
                 lastSearchRef.query = null;
             }
+            if (currentCategory !== null) {
+                setCurrentCategory(null);
+            }
         }
-    }, [searchParams]);
+    }, [searchParams, currentCategory]);
 
     const executeSearch = async (searchQuery) => {
         setLoading(true);
@@ -201,7 +211,7 @@ export function Home() {
         handleSearch(searchQuery);
     };
 
-    const handlePlaySong = (song) => {
+    const handlePlaySong = (song, listIndex) => {
         // Track in Recent Activity
         addRecentItem({
             type: 'song',
@@ -220,6 +230,8 @@ export function Home() {
             album: song.album || null,
             album_id: song.album_id || null,
             search_term: song.search_term,
+            // Store list index so duplicate-title songs can be uniquely identified in the UI
+            playedIndex: listIndex ?? null,
         };
         // If viewing a category, add queue support
         if (currentCategory && results && results.songs) {
@@ -288,64 +300,11 @@ export function Home() {
                     </div>
                 </div>
             )}
-            {/* Main Content Area */}
-            <div className={`p-4 md:p-8 pt-6 md:pt-10 transition-all duration-300 ${results ? 'transform -translate-y-4' : ''}`}>
 
-                {/* --- DESKTOP VIEW (lg+) --- */}
-                <div className="hidden lg:flex flex-col items-center justify-center mb-10 md:mb-16 relative">
-                    {/* Desktop Profile Icon */}
-                    <div className="absolute top-0 right-0 z-50">
-                        <button className="p-3 bg-zinc-800/80 rounded-full hover:bg-zinc-700/80 text-white transition-colors shadow-lg border border-white/10" title="Profile">
-                            <User className="h-5 w-5" />
-                        </button>
-                    </div>
-                    <div className="flex items-center gap-4 mb-6">
-                        <AnimatedLogo className="h-16 w-16" isPlaying={isPlayerPlaying || true} />
-                        <h1 className="text-6xl tracking-widest text-[#f5f5f5]" style={{
-                            fontFamily: '"Monoton", sans-serif',
-                            textShadow: '0 2px 10px rgba(0,0,0,0.5)'
-                        }}>
-                            Volt Music
-                        </h1>
-                    </div>
-                    <SearchBar onSearch={handleSearch} query={query} setQuery={setQuery} disabled={loading} />
-                </div>
-
-                {/* --- MOBILE & IPAD VIEW (< lg) --- */}
-                <div className="flex lg:hidden flex-col mb-8 w-full">
-                    <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-2 relative z-20">
-                            <AnimatedLogo className="h-8 w-8 sm:h-10 sm:w-10" isPlaying={isPlayerPlaying || true} />
-                            <h1 className="text-xl sm:text-2xl tracking-widest text-[#f5f5f5] whitespace-nowrap pt-1" style={{ fontFamily: '"Monoton", sans-serif', textShadow: '0 2px 10px rgba(0,0,0,0.5)', lineHeight: 1 }}>
-                                Volt Music
-                            </h1>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setIsMobileSearchOpen(!isMobileSearchOpen)}
-                                className={`p-1 transition-colors relative z-20 ${isMobileSearchOpen ? 'text-[#00f3ff]' : 'text-white hover:text-[#00f3ff]'}`}
-                            >
-                                {isMobileSearchOpen ? <X className="h-6 w-6 sm:h-7 sm:w-7" /> : <Search className="h-6 w-6 sm:h-7 sm:w-7" />}
-                            </button>
-                            <button className="p-1 transition-colors relative z-20 text-white hover:text-[#00f3ff]" title="Profile">
-                                <User className="h-6 w-6 sm:h-7 sm:w-7" />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Expandable Search Bar container */}
-                    <div
-                        className={`transition-all duration-500 ease-in-out overflow-hidden w-full relative z-10 ${isMobileSearchOpen ? 'max-h-[500px] opacity-100 mt-6' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}
-                    >
-                        <SearchBar onSearch={(q) => { handleSearch(q); setIsMobileSearchOpen(false); }} query={query} setQuery={setQuery} disabled={loading} />
-                    </div>
-                </div>
-            </div>
 
             {!results && !loading && (
                 <>
                     <RecentSearches onSearchClick={handleRecentSearchClick} />
-
                     {/* My Playlists — Restored */}
                     {playlists.length > 0 && (
                         <div className="mb-8">
@@ -367,8 +326,8 @@ export function Home() {
                                     <Plus className="h-3.5 w-3.5" /> New
                                 </button>
                             </div>
+                            
                             <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-
                                 {playlists.map((pl) => (
                                     <button
                                         key={pl.id}
@@ -608,9 +567,9 @@ export function Home() {
                                             song={{ ...song, img: song.image }}
                                             index={idx}
                                             delay={idx * 30}
-                                            active={currentPlayingId === song.search_term && isPlayerPlaying}
-                                            paused={currentPlayingId === song.search_term && !isPlayerPlaying}
-                                            onSelect={() => handlePlaySong(song)}
+                                            active={currentPlayingId === song.search_term && currentPlayingIndex === idx && isPlayerPlaying}
+                                            paused={currentPlayingId === song.search_term && currentPlayingIndex === idx && !isPlayerPlaying}
+                                            onSelect={() => handlePlaySong(song, idx)}
                                         />
                                     ))}
                                 </div>
@@ -641,26 +600,26 @@ export function Home() {
                                         </button>
                                     )}
                                 </div>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4">
+                                <div className="grid grid-cols-2 min-[500px]:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3 md:gap-4">
                                     {albumsToShow.map((album, idx) => (
-                                        <div key={idx} className="flex justify-center">
-                                            <AnimatedAlbumCard
-                                                item={{ ...album, img: album.image }}
-                                                delay={idx % 10 * 30}
-                                                isPlaying={false}
-                                                onPlay={() => {
-                                                    addRecentItem({
-                                                        type: 'album',
-                                                        id: album.album_id,
-                                                        name: album.title,
-                                                        title: album.title,
-                                                        image: album.image,
-                                                        subtitle: album.artist,
-                                                    });
-                                                    navigate(`/album/${album.album_id}`);
-                                                }}
-                                            />
-                                        </div>
+                                        <AnimatedAlbumCard
+                                            key={idx}
+                                            fluid={true}
+                                            item={{ ...album, img: album.image }}
+                                            delay={idx % 10 * 30}
+                                            isPlaying={false}
+                                            onPlay={() => {
+                                                addRecentItem({
+                                                    type: 'album',
+                                                    id: album.album_id,
+                                                    name: album.title,
+                                                    title: album.title,
+                                                    image: album.image,
+                                                    subtitle: album.artist,
+                                                });
+                                                navigate(`/album/${album.album_id}`);
+                                            }}
+                                        />
                                     ))}
                                 </div>
                             </section>
@@ -687,12 +646,19 @@ export function Home() {
                                         </button>
                                     )}
                                 </div>
-                                <div className={(showAllArtists || currentCategory) ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4 gap-y-8 mt-2" : "hscroll flex gap-4 overflow-x-auto pb-6 pt-2 custom-scrollbar touch-pan-x px-1"}>
+                                {/* Scroll mode: fix wrapper width so sm:w-[170px] circle doesn't clip */}
+                                <div className={(showAllArtists || currentCategory)
+                                    ? "grid grid-cols-2 min-[500px]:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4 gap-y-8 mt-2"
+                                    : "hscroll flex gap-4 overflow-x-auto pb-6 pt-2 custom-scrollbar touch-pan-x px-1"
+                                }>
                                     {artistsToShow.map((artist, idx) => (
                                         <div
                                             key={idx}
-                                            className={`cursor-pointer group flex justify-center ${!(showAllArtists || currentCategory) ? 'flex-shrink-0' : 'w-full'}`}
-                                            style={!(showAllArtists || currentCategory) ? { width: 150 } : {}}
+                                            className={`cursor-pointer group flex justify-center ${
+                                                !(showAllArtists || currentCategory)
+                                                    ? 'flex-shrink-0 w-[150px] sm:w-[190px]'
+                                                    : 'w-full'
+                                            }`}
                                             onClick={() => {
                                                 addRecentItem({
                                                     type: 'artist',
@@ -703,18 +669,19 @@ export function Home() {
                                                 navigate(`/artist/${encodeURIComponent(artist.name)}`);
                                             }}
                                         >
-                                            <div className="flex flex-col items-center w-full max-w-[150px]">
-                                                <div className="w-[120px] h-[120px] md:w-[150px] md:h-[150px] rounded-full overflow-hidden relative shadow-lg ring-1 ring-white/10 group-hover:ring-[#00f3ff]/50 group-hover:shadow-[0_0_30px_rgba(0,243,255,0.3)] transition-all duration-300 transform group-hover:-translate-y-2">
-                                                    <img
+                                            <div className="flex flex-col items-center w-full max-w-[170px]">
+                                                <div className="w-[130px] h-[130px] sm:w-[170px] sm:h-[170px] rounded-full overflow-hidden relative shadow-lg ring-1 ring-white/10 group-hover:ring-white/20 group-hover:shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all duration-300 transform group-hover:-translate-y-2">
+                                                    <ArtistImage
+                                                        name={artist.name}
                                                         src={artist.image}
                                                         alt={artist.name}
                                                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 pointer-events-none"
                                                     />
                                                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                                                 </div>
-                                                <div className="mt-4 text-center px-1">
-                                                    <h3 className="text-white font-bold text-sm md:text-base truncate group-hover:text-[#00f3ff] transition-colors w-full">{artist.name}</h3>
-                                                    <p className="text-zinc-500 text-xs mt-1 font-medium uppercase tracking-widest">{artist.genre || 'Artist'}</p>
+                                                <div className="mt-3 sm:mt-4 text-center px-2 w-full">
+                                                    <h3 className="text-white font-bold text-sm sm:text-base truncate group-hover:text-[#00f3ff] transition-colors w-full">{artist.name}</h3>
+                                                    <p className="text-zinc-500 text-[10px] sm:text-xs mt-1 font-medium uppercase tracking-widest">{artist.genre || 'Artist'}</p>
                                                 </div>
                                             </div>
                                         </div>

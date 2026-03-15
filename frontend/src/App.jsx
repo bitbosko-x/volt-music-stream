@@ -1,19 +1,23 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { Home } from '@/pages/Home';
 import { AlbumDetail } from '@/pages/AlbumDetail';
 import { ArtistDetail } from '@/pages/ArtistDetail';
 import { PlaylistPage } from '@/pages/PlaylistPage';
-import { StickyPlayer } from '@/components/StickyPlayer';
-import { PlaylistModal } from '@/components/PlaylistModal';
+import { StickyPlayer } from '@/components/player/StickyPlayer';
+import { PlaylistModal } from '@/components/shared/PlaylistModal';
 import { PlaylistProvider } from '@/context/PlaylistContext';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { BackendOfflinePage, BackendErrorBanner } from '@/components/BackendError';
+import { AuthProvider } from '@/context/AuthContext';
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { BackendOfflinePage, BackendErrorBanner } from '@/components/shared/BackendError';
 import { useBackendHealth } from '@/lib/useBackendHealth';
+import { Navbar } from '@/components/shared/Navbar';
 
 function AppContent() {
     const { isOnline, isChecking, retry } = useBackendHealth();
     const [bannerDismissed, setBannerDismissed] = useState(false);
+    const location = useLocation();
+    const isHome = location.pathname === '/';
 
     // Reset banner if connection is lost again
     useEffect(() => {
@@ -36,6 +40,7 @@ function AppContent() {
                     onDismiss={() => setBannerDismissed(true)}
                 />
             )}
+            <Navbar />
             <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/album/:albumId" element={<AlbumDetail />} />
@@ -51,11 +56,13 @@ function AppContent() {
 function App() {
     return (
         <ErrorBoundary>
-            <PlaylistProvider>
-                <Router>
-                    <AppContent />
-                </Router>
-            </PlaylistProvider>
+            <AuthProvider>
+                <PlaylistProvider>
+                    <Router>
+                        <AppContent />
+                    </Router>
+                </PlaylistProvider>
+            </AuthProvider>
         </ErrorBoundary>
     );
 }

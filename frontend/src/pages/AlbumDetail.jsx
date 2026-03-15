@@ -3,11 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getAlbumTracks } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, AlertCircle, X, Play, Shuffle } from 'lucide-react';
-import { addRecentItem } from '@/components/RecentSearches';
+import { addRecentItem } from '@/components/shared/RecentSearches';
 import {
     SongListRow,
     AnimatedSectionHeader,
-} from '@/components/AnimatedCards';
+} from '@/components/cards/AnimatedCards';
 
 export function AlbumDetail() {
     const { albumId } = useParams();
@@ -66,6 +66,7 @@ export function AlbumDetail() {
                 album: song.album || album.album_name || null,
                 album_id: song.album_id || albumId || null,
                 search_term: song.search_term,
+                playedIndex: songIndex,
                 queue: album.songs,
                 currentIndex: songIndex,
             }
