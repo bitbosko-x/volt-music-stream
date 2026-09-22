@@ -184,3 +184,13 @@
     animation: play-bar 0.9s infinite ease-in-out 0.4s;
   }
 }
+
+/* Hide Netlify attribution badge */
+[data-netlify-widget],
+#netlify-badge,
+.netlify-badge,
+[class*="netlify-badge"],
+a[href*="netlify.com"][style*="position:fixed"],
+a[href*="netlify.com"][style*="position: fixed"] {
+  display: none !important;
+}
