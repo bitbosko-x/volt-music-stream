@@ -13,6 +13,11 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // If Firebase is not configured, run in guest mode immediately
+        if (!auth) {
+            setLoading(false);
+            return;
+        }
         let unsubscribe;
         try {
             unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -20,15 +25,13 @@ export function AuthProvider({ children }) {
                 setLoading(false);
             }, (error) => {
                 console.error("Auth state change error:", error);
-                setLoading(false); // Make sure we don't get stuck loading
+                setLoading(false);
             });
         } catch (error) {
             console.error("Firebase auth initialization failed:", error);
-            setLoading(false); // Fail gracefully to guest mode
+            setLoading(false);
         }
-        return () => {
-            if (unsubscribe) unsubscribe();
-        };
+        return () => { if (unsubscribe) unsubscribe(); };
     }, []);
 
     const loginWithGoogle = async () => {
