@@ -203,14 +203,18 @@ def api_play():
         if not stream_url:
             return jsonify({"error": "Could not find audio stream"}), 404
 
+        # Use absolute URLs so the browser can load audio when the frontend
+        # is on a different domain (e.g. Netlify) from the backend (Render).
+        base = request.url_root.rstrip('/')
+
         if source == 'youtube':
             from urllib.parse import quote
-            proxy_url = f"/api/stream?q={quote(search_term)}"
+            proxy_url = f"{base}/api/stream?q={quote(search_term)}"
             return jsonify({"stream_url": proxy_url, "source": source})
 
         if source == 'saavn':
             from urllib.parse import quote
-            proxy_url = f"/api/saavn-stream?url={quote(stream_url, safe='')}"
+            proxy_url = f"{base}/api/saavn-stream?url={quote(stream_url, safe='')}"
             return jsonify({"stream_url": proxy_url, "source": source})
 
         return jsonify({"stream_url": stream_url, "source": source})
