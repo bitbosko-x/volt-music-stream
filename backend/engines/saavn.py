@@ -119,6 +119,7 @@ def search_saavn(query):
                     songs.append({
                         "title": fix_title(s['song']),
                         "artist": fix_title(artist),
+                        "album": fix_title(s.get('more_info', {}).get('album', '') or s.get('album', '')),
                         "image": s.get('image', '').replace("150x150", "500x500"),
                         "url": hq_url,
                         "id": s.get('id', ''),
@@ -220,6 +221,7 @@ def search_saavn_all(query):
                 songs.append({
                     "title":  fix_title(s.get("song", s.get("title", ""))),
                     "artist": fix_title(artist),
+                    "album":  fix_title(s.get("more_info", {}).get("album", "") or s.get("album", "")),
                     "image":  s.get("image", "").replace("150x150", "500x500"),
                     "url":    hq_url,
                     "id":     s.get("id", ""),
@@ -442,6 +444,9 @@ def search_saavn_enhanced(query, artist_filter=None, album_name=None):
         'slowed', 'sped', 'lofi', 'nightcore',
         'extended', 'live', 'remaster', 'remastered',
         'reprise', 'tribute', 'radio edit', 'club edit',
+        'techno', 'drill', 'phonk', 'sped up', 'speed up',
+        'piano version', 'string version', 'orchestral',
+        '8-bit', '16-bit', 'emulation',
     ]
     query_wants_version = any(kw in query.lower() for kw in version_keywords)
 
@@ -514,6 +519,19 @@ def search_saavn_enhanced(query, artist_filter=None, album_name=None):
                 t_words_clean = set(re.sub(r"[^a-z0-9 ]", "", track_artist_str).split())
                 if fa_words and fa_words.issubset(t_words_clean):
                     score += 50
+
+        # Album match bonus — strongly prefer the correct album version
+        if album_name:
+            track_album = track.get("album", "").lower()
+            album_lower = album_name.lower()
+            # Strip common suffixes for fuzzy comparison
+            clean_album = re.sub(r'\s*[\(\[].*?[\)\]]', '', album_lower).strip()
+            clean_track_album = re.sub(r'\s*[\(\[].*?[\)\]]', '', track_album).strip()
+            if clean_album and clean_track_album:
+                if clean_album == clean_track_album:
+                    score += 80   # Exact album match
+                elif clean_album in clean_track_album or clean_track_album in clean_album:
+                    score += 40   # Partial album match
 
         cover_kws = ["cover", "tribute", "karaoke", "we rabbitz", "romy wave",
                      "robert mendoza", "lemongrass", "vibe2vibe"]

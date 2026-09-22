@@ -22,6 +22,11 @@ from requests.exceptions import RequestException
 
 app = Flask(__name__)
 
+# Trust proxy headers from Cloudflare Tunnel / Render / reverse proxies
+# so request.scheme and request.host reflect the public URL, not 127.0.0.1.
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 # ── CORS ──────────────────────────────────────────────────────────────────────
 _raw_origin = os.getenv("CORS_ORIGIN", "http://localhost:3000")
 _cors_origins = [o.strip() for o in _raw_origin.split(",") if o.strip()]
@@ -191,6 +196,7 @@ def api_play():
     data = request.get_json() or {}
     raw_search_term = data.get('search_term', '')
     artist_name = data.get('artist', None)
+    album_name = data.get('album', None)
     saavn_id = data.get('saavn_id', None) or None  # Pre-resolved ID from search results
 
     search_term = sanitize_query(raw_search_term)
@@ -198,14 +204,18 @@ def api_play():
         return jsonify({"error": "search_term is required and must be ≤ 200 characters"}), 400
 
     try:
-        stream_url, source = hub.get_audio_link(search_term, artist_name=artist_name, saavn_id=saavn_id)
+        stream_url, source = hub.get_audio_link(search_term, artist_name=artist_name, saavn_id=saavn_id, album_name=album_name)
 
         if not stream_url:
             return jsonify({"error": "Could not find audio stream"}), 404
 
         # Use absolute URLs so the browser can load audio when the frontend
-        # is on a different domain (e.g. Netlify) from the backend (Render).
-        base = request.url_root.rstrip('/')
+        # is on a different domain (e.g. Netlify) from the backend (Render/Cloudflare).
+        # Prefer the X-Forwarded-Host header set by Cloudflare/proxies over the
+        # raw host (which would be 127.0.0.1 behind a tunnel).
+        forwarded_proto = request.headers.get('X-Forwarded-Proto', request.scheme)
+        forwarded_host = request.headers.get('X-Forwarded-Host', request.host)
+        base = f"{forwarded_proto}://{forwarded_host}"
 
         if source == 'youtube':
             from urllib.parse import quote

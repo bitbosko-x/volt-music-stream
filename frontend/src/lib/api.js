@@ -43,11 +43,11 @@ export const getCategorySongs = async (categoryId) => {
     return response.json();
 };
 
-export const getAudioStream = async (searchTerm, artistName = null, saavnId = null) => {
+export const getAudioStream = async (searchTerm, artistName = null, saavnId = null, albumName = null) => {
     const response = await fetch(`${API_BASE}/play`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ search_term: searchTerm, artist: artistName, saavn_id: saavnId }),
+        body: JSON.stringify({ search_term: searchTerm, artist: artistName, saavn_id: saavnId, album: albumName }),
     });
     if (response.status === 429) {
         throw new Error('rate_limit_exceeded');

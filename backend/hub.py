@@ -92,7 +92,7 @@ def _find_best_match(results, search_term):
     print(f"   [Hub] Selected Best Match: '{best_result['title']}' ({best_ratio:.2f})")
     return best_result
 
-def get_audio_link(search_term, artist_name=None, saavn_id=None):
+def get_audio_link(search_term, artist_name=None, saavn_id=None, album_name=None):
     """
     Resolves an audio stream for the given song.
     Fast path: if saavn_id is provided (pre-resolved at search time), fetch by ID directly —
@@ -124,7 +124,7 @@ def get_audio_link(search_term, artist_name=None, saavn_id=None):
     saavn_results = []
     try:
         print(f"\n🔍 [PIPELINE] STEP 2 — Searching JioSaavn …")
-        saavn_results = saavn_engine.search_saavn_enhanced(search_term, artist_filter=artist_filter)
+        saavn_results = saavn_engine.search_saavn_enhanced(search_term, artist_filter=artist_filter, album_name=album_name)
         print(f"   Saavn returned {len(saavn_results)} usable result(s) after filtering/ranking")
     except Exception as e:
         print(f"   ⚠️  Saavn search failed: {e}")
@@ -149,8 +149,9 @@ def get_audio_link(search_term, artist_name=None, saavn_id=None):
         _clean_query = re.sub(r'\([^)]*\)|\[[^\]]*\]', '', _clean_query)
         _clean_query = re.sub(r'[&,]', ' ', _clean_query)  # drop separator chars left after artist removal
         _clean_query = ' '.join(_clean_query.split())
-        _clean_result = re.sub(r'\([^)]*\)|\[[^\]]*\]', '', candidate['title'].lower())
-        _clean_result = ' '.join(_clean_result.split())
+        # Do NOT strip parentheticals from the result title — "Circles (Techno)"
+        # should NOT match query "circles". Only strip from the query side.
+        _clean_result = candidate['title'].lower().strip()
         _title_sim = difflib.SequenceMatcher(None, _clean_query, _clean_result).ratio()
         print(f"\n   Title gate: '{_clean_query}' vs '{_clean_result}' → {_title_sim:.2f}")
         if _title_sim >= 0.40:
