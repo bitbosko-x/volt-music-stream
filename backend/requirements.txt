@@ -1,17 +1,5 @@
 # Flask Web Framework
 Flask==3.0.0
-
-# HTTP Requests
-requests==2.31.0
-
-# YouTube Integration
-pytubefix==6.15.2
-yt-dlp==2026.2.21
-
-# DES Encryption for JioSaavn
-pyDes==2.0.1
-
-# Additional dependencies that pytubefix may need
 Werkzeug==3.0.1
 Jinja2==3.1.2
 MarkupSafe==2.1.3
@@ -19,13 +7,21 @@ itsdangerous==2.1.2
 click==8.1.7
 blinker==1.7.0
 
-# Production WSGI Servers (for concurrent request handling)
-gunicorn==21.2.0  # Unix-based systems (Linux/WSL)
-waitress==2.1.2   # Cross-platform alternative
+# Environment variables — REQUIRED, used by api.py and metadata.py
+python-dotenv==1.0.0
+
+# HTTP Requests
+requests==2.31.0
+
+# YouTube Integration
+yt-dlp==2026.2.21
+
+# DES Encryption for JioSaavn
+pyDes==2.0.1
+
+# Production WSGI Server (Linux / Render / Oracle)
+gunicorn==21.2.0
 
 # Helper Libraries
 Flask-Limiter==3.5.0
-requests-cache==1.1.0
-
-# CORS support for React frontend
 flask-cors==6.0.2
