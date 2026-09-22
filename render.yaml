@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: volt-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -c gunicorn_config.py api:app
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: LASTFM_API_KEY
+        sync: false
+      - key: SAAVN_DES_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false

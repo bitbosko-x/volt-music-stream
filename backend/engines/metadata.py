@@ -2,6 +2,8 @@ import requests
 from requests.exceptions import RequestException
 import datetime
 import os
+import time
+import threading
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -10,6 +12,50 @@ from . import lastfm as lastfm_engine
 import random
 import re
 import difflib
+
+# ── iTunes Circuit Breaker ────────────────────────────────────────────────────
+# After _CB_THRESHOLD consecutive failures, skip iTunes for _CB_RESET seconds.
+_CB_THRESHOLD = 3
+_CB_RESET     = 120  # seconds
+
+# ── iTunes Concurrency Limiter ────────────────────────────────────────────────
+# Cap simultaneous outbound iTunes requests to prevent rate-limiting from the
+# home page firing many category/artist/album calls at the same time.
+_ITUNES_SEM = threading.Semaphore(3)
+
+_itunes_cb = {
+    'failures':     0,
+    'last_failure': 0.0,
+    'open':         False,
+    'lock':         threading.Lock(),
+}
+
+def _cb_ok() -> bool:
+    """Return True if iTunes requests are allowed."""
+    with _itunes_cb['lock']:
+        if _itunes_cb['open']:
+            if time.time() - _itunes_cb['last_failure'] > _CB_RESET:
+                _itunes_cb.update(failures=0, open=False)
+                print("   [Meta] ⚡ Circuit breaker RESET — retrying iTunes", flush=True)
+                return True
+            return False
+        return True
+
+def _cb_fail():
+    with _itunes_cb['lock']:
+        _itunes_cb['failures'] += 1
+        _itunes_cb['last_failure'] = time.time()
+        if _itunes_cb['failures'] >= _CB_THRESHOLD and not _itunes_cb['open']:
+            _itunes_cb['open'] = True
+            print(f"   [Meta] ⚡ Circuit breaker OPEN — iTunes unreachable "
+                  f"({_itunes_cb['failures']} failures). "
+                  f"Skipping for {_CB_RESET}s.", flush=True)
+
+def _cb_success():
+    with _itunes_cb['lock']:
+        if _itunes_cb['failures']:
+            _itunes_cb.update(failures=0, open=False)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def fix_artwork_url(url):
     if not url: return ''
@@ -56,19 +102,30 @@ def search_metadata(query):
         return []
 
 def _search_itunes_by_entity(query, entity, limit=10, offset=0, country="US"):
-    """Helper function to search iTunes by specific entity type"""
-    try:
-        url = "https://itunes.apple.com/search"
-        params = {"term": query, "media": "music", "entity": entity, "limit": limit, "offset": offset, "country": country}
-        resp = requests.get(url, params=params, timeout=5)
-        data = resp.json()
-        return data.get('results', [])
-    except RequestException as e:
-        print(f"   [Meta] Connection Error searching {entity}: {e}")
-        raise e
-    except Exception as e:
-        print(f"   [Meta] Error searching {entity}: {e}")
-        return []
+    """Helper function to search iTunes by specific entity type.
+    Guarded by the circuit breaker — raises RequestException immediately
+    when the circuit is open so callers fall back to Saavn without delay.
+    Also gated by _ITUNES_SEM so at most 3 requests hit iTunes simultaneously,
+    preventing rate-limit-induced circuit breaker trips from home page bursts.
+    """
+    if not _cb_ok():
+        raise RequestException("iTunes circuit breaker open — skipping")
+    with _ITUNES_SEM:
+        try:
+            url = "https://itunes.apple.com/search"
+            params = {"term": query, "media": "music", "entity": entity,
+                      "limit": limit, "offset": offset, "country": country}
+            resp = requests.get(url, params=params, timeout=5)
+            data = resp.json()
+            _cb_success()
+            return data.get('results', [])
+        except RequestException as e:
+            print(f"   [Meta] Connection Error searching {entity}: {e}")
+            _cb_fail()
+            raise e
+        except Exception as e:
+            print(f"   [Meta] Error searching {entity}: {e}")
+            return []
 
 @smart_cache(ttl=86400, validator=lambda x: x and (x.get('songs') or x.get('albums') or x.get('artists')))
 def search_metadata_categorized(query, offset=0):
@@ -398,7 +455,7 @@ def get_video_preview(query):
         print(f"   [Meta] Error fetching video preview: {e}")
         return "https://cdn.pixabay.com/video/2020/04/18/36427-410774786_large.mp4"
 
-@smart_cache(ttl=1800, validator=lambda x: x and (x.get('songs') or x.get('albums')))
+@smart_cache(ttl=21600, validator=lambda x: x and (x.get('songs') or x.get('albums')))
 def get_category_songs(category_id):
     """
     Get curated songs for specific categories.

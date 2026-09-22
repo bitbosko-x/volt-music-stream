@@ -68,6 +68,7 @@ export function ArtistDetail() {
                 album: song.album || null,
                 album_id: song.album_id || null,
                 search_term: song.search_term,
+                saavn_id: song.saavn_id || null,
                 playedIndex: songIndex,
                 queue: artist.songs,
                 currentIndex: songIndex,

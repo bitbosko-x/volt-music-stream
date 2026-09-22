@@ -1,10 +1,15 @@
 import os
+import threading
 from .engines import metadata as metadata_engine
 from .engines import saavn as saavn_engine
 from .engines import youtube as yt_engine
 import difflib
 import re
 from requests.exceptions import RequestException
+
+# In-memory cache: search_term → saavn_id
+# Populated in the background after search; consumed at play time.
+_SAAVN_ID_CACHE: dict[str, str] = {}
 
 DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'downloads')
 
@@ -87,17 +92,33 @@ def _find_best_match(results, search_term):
     print(f"   [Hub] Selected Best Match: '{best_result['title']}' ({best_ratio:.2f})")
     return best_result
 
-def get_audio_link(search_term, artist_name=None):
+def get_audio_link(search_term, artist_name=None, saavn_id=None):
     """
-    Takes the clean string from Apple (e.g. 'Starboy The Weeknd')
-    and matches it to a real audio file.
+    Resolves an audio stream for the given song.
+    Fast path: if saavn_id is provided (pre-resolved at search time), fetch by ID directly —
+    no text matching, zero drift.
+    Slow path: fuzzy Saavn search → YouTube fallback.
     """
     SEP = "─" * 55
     print(f"\n{SEP}")
     print(f"🎵 [PIPELINE] STEP 1 — Query received")
     print(f"   Search Term : {search_term!r}")
     print(f"   Artist Hint : {artist_name!r}")
+    print(f"   Saavn ID    : {saavn_id!r}")
     print(SEP)
+
+    # ── FAST PATH: direct Saavn ID lookup (100% accurate, no text matching) ──
+    # Accept ID from the frontend OR from the background pre-resolution cache.
+    resolved_id = saavn_id or _SAAVN_ID_CACHE.get(search_term)
+    if resolved_id:
+        source_label = "frontend" if saavn_id else "bg-cache"
+        print(f"\n⚡ [PIPELINE] FAST PATH — Saavn ID '{resolved_id}' (via {source_label})")
+        url = saavn_engine.get_stream_by_saavn_id(resolved_id)
+        if url:
+            print(f"   ✅ Direct ID resolved — zero drift guaranteed")
+            print(SEP + "\n")
+            return url, 'saavn'
+        print(f"   ⚠️  ID lookup failed, falling back to text search")
 
     artist_filter = [artist_name] if artist_name else None
     saavn_results = []
@@ -115,8 +136,28 @@ def get_audio_link(search_term, artist_name=None):
             marker = "✅ SELECTED" if i == 0 else f"   #{i+1}"
             has_url = "✓ has stream URL" if r.get('url') else "✗ no stream URL"
             print(f"   {marker}  '{r['title']}' — {r['artist']}  ({has_url})")
-        best_match = saavn_results[0]
-        print(f"\n   Winner: '{best_match['title']}' by '{best_match['artist']}'")
+
+        # Title similarity gate — reject the Saavn winner if its title is too
+        # different from what was actually requested, so we fall back to YouTube
+        # rather than playing a completely wrong song.
+        candidate = saavn_results[0]
+        _clean_query = search_term.lower()
+        for _a in re.split(r'[,&]|\bfeat\.?\b|\bft\.?\b', (artist_name or '').lower()):
+            _a = _a.strip()
+            if _a:
+                _clean_query = re.sub(r'\b' + re.escape(_a) + r'\b', '', _clean_query)
+        _clean_query = re.sub(r'\([^)]*\)|\[[^\]]*\]', '', _clean_query)
+        _clean_query = re.sub(r'[&,]', ' ', _clean_query)  # drop separator chars left after artist removal
+        _clean_query = ' '.join(_clean_query.split())
+        _clean_result = re.sub(r'\([^)]*\)|\[[^\]]*\]', '', candidate['title'].lower())
+        _clean_result = ' '.join(_clean_result.split())
+        _title_sim = difflib.SequenceMatcher(None, _clean_query, _clean_result).ratio()
+        print(f"\n   Title gate: '{_clean_query}' vs '{_clean_result}' → {_title_sim:.2f}")
+        if _title_sim >= 0.40:
+            best_match = candidate
+            print(f"   Winner: '{best_match['title']}' by '{best_match['artist']}'")
+        else:
+            print(f"   ⚠️  Title similarity too low ({_title_sim:.2f}) — discarding, falling back to YouTube")
     else:
         print(f"\n   ⚠️  [PIPELINE] STEP 3 — No Saavn results. Jumping to YouTube fallback.")
 
@@ -151,18 +192,51 @@ def get_audio_link(search_term, artist_name=None):
     return None, None
 
 
+def _resolve_song_ids_background(songs, max_songs=8):
+    """
+    Fire-and-forget: resolves Saavn IDs for the top N songs and stores them
+    in _SAAVN_ID_CACHE keyed by search_term.  Runs in a daemon thread so it
+    never blocks the search response.  By the time the user clicks play
+    (typically 1-5 s later) the IDs are ready.
+    """
+    def _worker():
+        targets = songs[:max_songs]
+        print(f"--- HUB: [BG] Resolving Saavn IDs for {len(targets)} songs ---")
+        for song in targets:
+            key = song.get('search_term', '')
+            if not key or key in _SAAVN_ID_CACHE:
+                continue
+            try:
+                artist = song.get('artist', '')
+                results = saavn_engine.search_saavn_enhanced(
+                    key,
+                    artist_filter=[artist] if artist else None,
+                )
+                if results and results[0].get('id'):
+                    _SAAVN_ID_CACHE[key] = results[0]['id']
+                    print(f"--- HUB: [BG] ✓ {key[:50]!r} → {results[0]['id']}")
+            except Exception as e:
+                print(f"--- HUB: [BG] ✗ {key[:50]!r}: {e}")
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
 def search_hybrid(user_query, categorized=True, offset=0):
     """
     Search for music content.
+    Songs in the result include 'saavn_id' pre-resolved so play requests
+    can skip text matching entirely and use direct ID lookup.
     """
     print(f"--- HUB: Processing '{user_query}' (offset: {offset}) ---")
-    
+
     if categorized:
         try:
             results = metadata_engine.search_metadata_categorized(user_query, offset=offset)
             if results['songs'] or results['albums'] or results['artists']:
                 print(f"--- HUB: Found categorized results ---")
                 print(f"   Songs: {len(results['songs'])}, Albums: {len(results['albums'])}, Artists: {len(results['artists'])}")
+                _resolve_song_ids_background(results['songs'])
                 return results
         except RequestException as e:
             print(f"--- HUB: Metadata search failed (connection error): {e}")

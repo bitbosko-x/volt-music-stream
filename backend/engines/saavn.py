@@ -121,6 +121,7 @@ def search_saavn(query):
                         "artist": fix_title(artist),
                         "image": s.get('image', '').replace("150x150", "500x500"),
                         "url": hq_url,
+                        "id": s.get('id', ''),
                         "source": "saavn",
                         "quality": "320kbps"
                     })
@@ -221,6 +222,7 @@ def search_saavn_all(query):
                     "artist": fix_title(artist),
                     "image":  s.get("image", "").replace("150x150", "500x500"),
                     "url":    hq_url,
+                    "id":     s.get("id", ""),
                     "source": "saavn",
                     "quality": "320kbps",
                 })
@@ -328,15 +330,18 @@ def rank_result(result):
             return i
     return len(IMAGE_PRIORITY)
 
+_ARTICLE_STOP = {"the", "a", "an"}
+
 def _artist_words_match(query_artist: str, track_artist_str: str) -> bool:
-    q_words = set(re.sub(r"[^a-z0-9 ]", "", query_artist.lower()).split())
-    t_words = set(re.sub(r"[^a-z0-9 ]", "", track_artist_str.lower()).split())
+    # Strip leading articles so "The Weeknd" matches "Weeknd", "The Beatles" matches "Beatles"
+    q_words = set(re.sub(r"[^a-z0-9 ]", "", query_artist.lower()).split()) - _ARTICLE_STOP
+    t_words = set(re.sub(r"[^a-z0-9 ]", "", track_artist_str.lower()).split()) - _ARTICLE_STOP
 
     if bool(q_words) and q_words.issubset(t_words):
         return True
 
     for variant in _resolve_aliases(query_artist):
-        v_words = set(re.sub(r"[^a-z0-9 ]", "", variant).split())
+        v_words = set(re.sub(r"[^a-z0-9 ]", "", variant).split()) - _ARTICLE_STOP
         if v_words and v_words.issubset(t_words):
             return True
 
@@ -372,9 +377,11 @@ def search_saavn_enhanced(query, artist_filter=None, album_name=None):
 
     query_title = re.sub(r'\(feat\.?[^)]*\)', ' ', query_title, flags=re.IGNORECASE)
     query_title = re.sub(r'\(ft\.?[^)]*\)', ' ', query_title, flags=re.IGNORECASE)
+    query_title = re.sub(r'\[feat\.?[^\]]*\]', ' ', query_title, flags=re.IGNORECASE)
+    query_title = re.sub(r'\[ft\.?[^\]]*\]', ' ', query_title, flags=re.IGNORECASE)
     query_title = re.sub(r'feat\.?\s+\S+', ' ', query_title, flags=re.IGNORECASE)
     query_title = re.sub(r'\(from\s+[^)]+\)', ' ', query_title, flags=re.IGNORECASE)
-    query_title = re.sub(r'[\-\:\,\&\(\)]', ' ', query_title)
+    query_title = re.sub(r'[\-\:\,\&\(\)\[\]]', ' ', query_title)
     query_title = ' '.join(query_title.split()).strip()
 
     print(f"   [Saavn+] 🎯 Extracted Title: '{query_title}', Artist: '{query_artist}'")
@@ -430,7 +437,12 @@ def search_saavn_enhanced(query, artist_filter=None, album_name=None):
     for r in raw_results:
         print(f"      - '{r['title']}' — '{r['artist']}'")
 
-    version_keywords = ['remix', 'mix', 'acoustic', 'cover', 'instrumental', 'slowed', 'sped', 'lofi', 'nightcore']
+    version_keywords = [
+        'remix', 'mix', 'acoustic', 'cover', 'instrumental',
+        'slowed', 'sped', 'lofi', 'nightcore',
+        'extended', 'live', 'remaster', 'remastered',
+        'reprise', 'tribute', 'radio edit', 'club edit',
+    ]
     query_wants_version = any(kw in query.lower() for kw in version_keywords)
 
     scored = []
@@ -453,13 +465,20 @@ def search_saavn_enhanced(query, artist_filter=None, album_name=None):
         track_artist_count = len([a for a in track["artist"].split(",") if a.strip()])
         med = title_median_count.get(track_title, 1)
         if track_artist_count == 1 and med >= 3:
-            score -= 60
+            if query_artists and _artist_words_match(query_artist, track_artist_str):
+                # Single-credit entry for the correct artist — slight penalty because Saavn
+                # often has the original release credited to multiple songwriters/producers,
+                # and a single-credit entry is more likely to be a simplified or wrong version.
+                score -= 20
+            else:
+                # Single-credit by a non-matching artist: almost certainly a cover/tribute
+                score -= 60
 
         track_has_version = any(kw in track_title for kw in version_keywords)
         if track_has_version and not query_wants_version:
-            score -= 50
+            score -= 80
         elif not track_has_version and query_wants_version:
-            score -= 50
+            score -= 80
 
         if track_title == query_title:
             score += 100
@@ -580,6 +599,53 @@ def search_saavn_enhanced(query, artist_filter=None, album_name=None):
     print(f"   {SEP}\n")
 
     return final_results
+
+
+@smart_cache(ttl=300, validator=lambda x: x is not None)
+def get_stream_by_saavn_id(song_id: str):
+    """
+    Fetch a fresh stream URL for a known Saavn song ID — no text search, no fuzzy matching.
+    This is the zero-drift path: the exact song chosen at search time, re-hydrated at play time.
+    TTL=300s because the CDN URL itself expires; the ID is permanent.
+    """
+    if not song_id:
+        return None
+    print(f"   [Saavn] 🎯 Direct ID lookup: '{song_id}'")
+    try:
+        resp = requests.get(
+            "https://www.jiosaavn.com/api.php",
+            params={
+                "__call": "song.getDetails",
+                "pids": song_id,
+                "_format": "json",
+                "_marker": "0",
+                "ctx": "web6dot0",
+            },
+            headers=HEADERS,
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            print(f"   [Saavn] ID lookup returned {resp.status_code}")
+            return None
+        data = fix_json(resp.text)
+        song_data = data.get(song_id) or (next(iter(data.values()), None) if data else None)
+        if not song_data:
+            print(f"   [Saavn] ID lookup: no song data in response")
+            return None
+        enc = song_data.get("encrypted_media_url")
+        if not enc:
+            print(f"   [Saavn] ID lookup: no encrypted_media_url")
+            return None
+        raw = decrypt_url(enc)
+        if not raw:
+            print(f"   [Saavn] ID lookup: decryption failed")
+            return None
+        url = raw.replace("_96.mp4", "_160.mp4")
+        print(f"   [Saavn] ✅ ID lookup succeeded: {url[:80]}…")
+        return url
+    except Exception as e:
+        print(f"   [Saavn] ID lookup error: {e}")
+        return None
 
 
 def download_saavn_file(url, path):

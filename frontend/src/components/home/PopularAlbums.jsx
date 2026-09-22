@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCategorySongs } from '@/lib/api';
+import { useInView } from '@/lib/useInView';
 import { AnimatedSectionHeader, AnimatedAlbumCard } from '@/components/cards/AnimatedCards';
 import { Button } from '@/components/ui/button';
 import { ChevronRight } from 'lucide-react';
@@ -9,48 +10,39 @@ export function PopularAlbums({ onViewAll }) {
     const navigate = useNavigate();
     const [albums, setAlbums] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [ref, inView] = useInView('400px');
 
     useEffect(() => {
-        let isMounted = true;
-        const fetchPopularAlbums = async () => {
+        if (!inView) return;
+        let cancelled = false;
+        (async () => {
             try {
                 const data = await getCategorySongs('popular_albums');
-                if (isMounted && data && data.albums) {
-                    setAlbums(data.albums.slice(0, 10)); // Take top 10
-                }
-            } catch (error) {
-                console.error('Failed to fetch popular albums:', error);
+                if (!cancelled && data?.albums) setAlbums(data.albums.slice(0, 10));
+            } catch (e) {
+                console.error('Failed to fetch popular albums:', e);
             } finally {
-                if (isMounted) setLoading(false);
+                if (!cancelled) setLoading(false);
             }
-        };
-
-        fetchPopularAlbums();
-        return () => { isMounted = false; };
-    }, []);
+        })();
+        return () => { cancelled = true; };
+    }, [inView]);
 
     const handleViewAll = () => {
         // Just call the parent handler
         if (onViewAll) onViewAll();
     };
 
-    if (loading) {
-        return (
-            <section style={{ padding: "0 0 36px" }}>
+    return (
+        <section ref={ref} style={{ padding: "0 0 36px", position: "relative" }}>
+        {loading ? (
+            <>
                 <AnimatedSectionHeader title="Popular Albums" sub="Loading..." />
                 <div className="flex gap-4 overflow-x-auto pb-4">
-                    {[...Array(6)].map((_, i) => (
-                        <div key={i} className="flex-shrink-0 w-40 h-40 bg-accent animate-pulse rounded-lg" />
-                    ))}
+                    {[...Array(6)].map((_, i) => <div key={i} className="flex-shrink-0 w-40 h-40 bg-accent animate-pulse rounded-lg" />)}
                 </div>
-            </section>
-        );
-    }
-
-    if (!albums || albums.length === 0) return null;
-
-    return (
-        <section style={{ padding: "0 0 36px", position: "relative" }}>
+            </>
+        ) : albums.length === 0 ? null : (<>
             <div className="flex justify-between items-end mb-4">
                 <AnimatedSectionHeader title="Popular Albums" sub="Top albums from around the world" />
                 <Button variant="ghost" size="sm" onClick={handleViewAll} className="gap-1 text-zinc-400 hover:text-white mb-4 -mt-2">
@@ -70,6 +62,7 @@ export function PopularAlbums({ onViewAll }) {
                     />
                 ))}
             </div>
+        </>)}
         </section>
     );
 }

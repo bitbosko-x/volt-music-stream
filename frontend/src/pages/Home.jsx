@@ -230,7 +230,7 @@ export function Home() {
             album: song.album || null,
             album_id: song.album_id || null,
             search_term: song.search_term,
-            // Store list index so duplicate-title songs can be uniquely identified in the UI
+            saavn_id: song.saavn_id || null,
             playedIndex: listIndex ?? null,
         };
         // If viewing a category, add queue support

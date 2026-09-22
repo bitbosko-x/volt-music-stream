@@ -1,12 +1,17 @@
 import os
 import re
+import sys
+
+# Allow running directly from the backend/ directory
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from dotenv import load_dotenv
 load_dotenv()
 
-from . import hub
-from .engines import metadata as metadata_engine
-from .engines import youtube as yt_engine
-from .engines import lastfm as lastfm_engine
+from backend import hub
+from backend.engines import metadata as metadata_engine
+from backend.engines import youtube as yt_engine
+from backend.engines import lastfm as lastfm_engine
 from flask import Flask, request, jsonify, send_file, Response, stream_with_context
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -186,13 +191,14 @@ def api_play():
     data = request.get_json() or {}
     raw_search_term = data.get('search_term', '')
     artist_name = data.get('artist', None)
+    saavn_id = data.get('saavn_id', None) or None  # Pre-resolved ID from search results
 
     search_term = sanitize_query(raw_search_term)
     if not search_term:
         return jsonify({"error": "search_term is required and must be ≤ 200 characters"}), 400
 
     try:
-        stream_url, source = hub.get_audio_link(search_term, artist_name=artist_name)
+        stream_url, source = hub.get_audio_link(search_term, artist_name=artist_name, saavn_id=saavn_id)
 
         if not stream_url:
             return jsonify({"error": "Could not find audio stream"}), 404
@@ -352,4 +358,5 @@ if __name__ == '__main__':
     else:
         print("✅ Running in production mode (debug=False)")
     print("For production, use: gunicorn -w 4 -b 0.0.0.0:5000 backend.api:app")
+    print("Dev usage: cd backend && python api.py")
     app.run(debug=_debug, threaded=True, processes=1, port=5000)

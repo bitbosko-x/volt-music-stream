@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCategorySongs } from '@/lib/api';
+import { useInView } from '@/lib/useInView';
 import { AnimatedSectionHeader, AnimatedAlbumCard } from '@/components/cards/AnimatedCards';
 import { Button } from '@/components/ui/button';
 import { ChevronRight } from 'lucide-react';
@@ -10,6 +11,7 @@ export function RecentHindiReleases({ onViewAll }) {
     const [songs, setSongs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [playingId, setPlayingId] = useState(null);
+    const [ref, inView] = useInView('400px');
 
     const [currentPlayingId, setCurrentPlayingId] = useState(null);
     const [isPlayerPlaying, setIsPlayerPlaying] = useState(false);
@@ -30,22 +32,20 @@ export function RecentHindiReleases({ onViewAll }) {
     }, []);
 
     useEffect(() => {
-        let isMounted = true;
-        const fetchRecentHindi = async () => {
+        if (!inView) return;
+        let cancelled = false;
+        (async () => {
             try {
                 const data = await getCategorySongs('recent_hindi_releases');
-                if (isMounted && data && data.songs) {
-                    setSongs(data.songs.slice(0, 10));
-                }
-            } catch (error) {
-                console.error('Failed to fetch recent hindi songs:', error);
+                if (!cancelled && data?.songs) setSongs(data.songs.slice(0, 10));
+            } catch (e) {
+                console.error('Failed to fetch recent hindi songs:', e);
             } finally {
-                if (isMounted) setLoading(false);
+                if (!cancelled) setLoading(false);
             }
-        };
-        fetchRecentHindi();
-        return () => { isMounted = false; };
-    }, []);
+        })();
+        return () => { cancelled = true; };
+    }, [inView]);
 
     const handlePlaySong = (song, idx) => {
         window.dispatchEvent(new CustomEvent('playTrack', {
@@ -66,23 +66,16 @@ export function RecentHindiReleases({ onViewAll }) {
         if (onViewAll) onViewAll();
     };
 
-    if (loading) {
-        return (
-            <section style={{ padding: "0 0 36px" }}>
+    return (
+        <section ref={ref} style={{ padding: "0 0 36px", position: "relative" }}>
+        {loading ? (
+            <>
                 <AnimatedSectionHeader title="Recent Hindi Releases" sub="Loading..." />
                 <div className="flex gap-4 overflow-x-auto pb-4">
-                    {[...Array(6)].map((_, i) => (
-                        <div key={i} className="flex-shrink-0 w-40 h-40 bg-accent animate-pulse rounded-lg" />
-                    ))}
+                    {[...Array(6)].map((_, i) => <div key={i} className="flex-shrink-0 w-40 h-40 bg-accent animate-pulse rounded-lg" />)}
                 </div>
-            </section>
-        );
-    }
-
-    if (!songs || songs.length === 0) return null;
-
-    return (
-        <section style={{ padding: "0 0 36px", position: "relative" }}>
+            </>
+        ) : songs.length === 0 ? null : (<>
             <div className="flex justify-between items-end mb-4">
                 <AnimatedSectionHeader title="Recent Hindi Releases" sub="Latest Hindi tracks for you" />
                 <Button variant="ghost" size="sm" onClick={handleViewAll} className="gap-1 text-zinc-400 hover:text-white mb-4 -mt-2">
@@ -102,6 +95,7 @@ export function RecentHindiReleases({ onViewAll }) {
                     />
                 ))}
             </div>
+        </>)}
         </section>
     );
 }

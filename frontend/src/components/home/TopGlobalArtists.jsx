@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getTopArtists } from '@/lib/api';
+import { useInView } from '@/lib/useInView';
 import { AnimatedSectionHeader, AnimatedCityCard } from '@/components/cards/AnimatedCards';
 import { Button } from '@/components/ui/button';
 import { ChevronRight } from 'lucide-react';
@@ -10,47 +11,38 @@ export function TopGlobalArtists({ onViewAll }) {
     const navigate = useNavigate();
     const [artists, setArtists] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [ref, inView] = useInView('400px');
 
     useEffect(() => {
-        let isMounted = true;
-        const fetchTopArtists = async () => {
+        if (!inView) return;
+        let cancelled = false;
+        (async () => {
             try {
                 const data = await getTopArtists();
-                if (isMounted && data && data.artists) {
-                    setArtists(data.artists.slice(0, 10)); // Take top 10 for the row
-                }
-            } catch (error) {
-                console.error('Failed to fetch top artists:', error);
+                if (!cancelled && data?.artists) setArtists(data.artists.slice(0, 10));
+            } catch (e) {
+                console.error('Failed to fetch top artists:', e);
             } finally {
-                if (isMounted) setLoading(false);
+                if (!cancelled) setLoading(false);
             }
-        };
-
-        fetchTopArtists();
-        return () => { isMounted = false; };
-    }, []);
+        })();
+        return () => { cancelled = true; };
+    }, [inView]);
 
     const handleViewAll = () => {
         if (onViewAll) onViewAll(artists);
     };
 
-    if (loading) {
-        return (
-            <section style={{ padding: "0 0 36px" }}>
+    return (
+        <section ref={ref} style={{ padding: "0 0 36px", position: "relative" }}>
+        {loading ? (
+            <>
                 <AnimatedSectionHeader title="Top Global Artists" sub="Loading..." />
                 <div className="flex gap-4 overflow-x-auto pb-4">
-                    {[...Array(6)].map((_, i) => (
-                        <div key={i} className="flex-shrink-0 w-40 h-40 bg-accent animate-pulse rounded-2xl" />
-                    ))}
+                    {[...Array(6)].map((_, i) => <div key={i} className="flex-shrink-0 w-40 h-40 bg-accent animate-pulse rounded-2xl" />)}
                 </div>
-            </section>
-        );
-    }
-
-    if (!artists || artists.length === 0) return null;
-
-    return (
-        <section style={{ padding: "0 0 36px", position: "relative" }}>
+            </>
+        ) : artists.length === 0 ? null : (<>
             <div className="flex justify-between items-end mb-4">
                 <AnimatedSectionHeader title="Top Global Artists" sub="The biggest stars on Volt Music" />
                 <Button variant="ghost" size="sm" onClick={handleViewAll} className="gap-1 text-zinc-400 hover:text-[#00f3ff] mb-4 -mt-2">
@@ -81,6 +73,7 @@ export function TopGlobalArtists({ onViewAll }) {
                     </div>
                 ))}
             </div>
+        </>)}
         </section>
     );
 }

@@ -164,7 +164,7 @@ export function StickyPlayer() {
             }
 
             try {
-                const { stream_url, source } = await getAudioStream(trackData.search_term, trackData.artist);
+                const { stream_url, source } = await getAudioStream(trackData.search_term, trackData.artist, trackData.saavn_id);
                 const fullTrack = { ...trackData, stream_url, source };
                 setPlayer(fullTrack);
                 localStorage.setItem('currentTrack', JSON.stringify(fullTrack));
@@ -344,7 +344,7 @@ export function StickyPlayer() {
         setStreamError(null);
         setStreamLoading(true);
         try {
-            const { stream_url, source } = await getAudioStream(song.search_term, song.artist);
+            const { stream_url, source } = await getAudioStream(song.search_term, song.artist, song.saavn_id);
             const trackData = {
                 title: song.title,
                 artist: song.artist,

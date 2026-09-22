@@ -24,14 +24,16 @@ function AppContent() {
         if (isOnline === false) setBannerDismissed(false);
     }, [isOnline]);
 
-    // Full offline screen on first load when backend is unreachable
-    if (isOnline === false) {
+    // Only block the whole app if backend is CONFIRMED offline (not null/unknown).
+    // While isOnline is null the first ping is still in-flight — we let the app
+    // render normally so category sections can load in parallel with the ping.
+    if (isOnline === false && !isChecking) {
         return <BackendOfflinePage onRetry={retry} isRetrying={isChecking} />;
     }
 
     return (
         <div className="min-h-screen bg-background">
-            {/* Slim banner for transient/reconnection errors — dismissible */}
+            {/* Slim banner only shown after ping comes back null with no active check */}
             {isOnline === null && !isChecking && !bannerDismissed && (
                 <BackendErrorBanner
                     message="Connecting to the Volt Music backend…"
