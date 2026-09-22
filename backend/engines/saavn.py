@@ -522,16 +522,13 @@ def search_saavn_enhanced(query, artist_filter=None, album_name=None):
 
         # Album match bonus — strongly prefer the correct album version
         if album_name:
-            track_album = track.get("album", "").lower()
-            album_lower = album_name.lower()
-            # Strip common suffixes for fuzzy comparison
-            clean_album = re.sub(r'\s*[\(\[].*?[\)\]]', '', album_lower).strip()
-            clean_track_album = re.sub(r'\s*[\(\[].*?[\)\]]', '', track_album).strip()
-            if clean_album and clean_track_album:
-                if clean_album == clean_track_album:
-                    score += 80   # Exact album match
-                elif clean_album in clean_track_album or clean_track_album in clean_album:
-                    score += 40   # Partial album match
+            track_album = track.get("album", "").lower().strip()
+            album_lower = album_name.lower().strip()
+            if album_lower and track_album:
+                if album_lower == track_album:
+                    score += 80   # Exact: "AUSTIN (Bonus)" == "AUSTIN (Bonus)"
+                elif track_album in album_lower or album_lower in track_album:
+                    score += 40   # Partial: "AUSTIN" ⊂ "AUSTIN (Bonus)"
 
         cover_kws = ["cover", "tribute", "karaoke", "we rabbitz", "romy wave",
                      "robert mendoza", "lemongrass", "vibe2vibe"]
