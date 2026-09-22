@@ -152,7 +152,12 @@ def get_audio_link(search_term, artist_name=None, saavn_id=None, album_name=None
         # Do NOT strip parentheticals from the result title — "Circles (Techno)"
         # should NOT match query "circles". Only strip from the query side.
         _clean_result = candidate['title'].lower().strip()
-        _title_sim = difflib.SequenceMatcher(None, _clean_query, _clean_result).ratio()
+        if _clean_query and _clean_result.startswith(_clean_query):
+            _title_sim = 1.0   # "sunflower" matches "sunflower (spider-man...)"
+        elif _clean_query and _clean_query in _clean_result:
+            _title_sim = 0.9
+        else:
+            _title_sim = difflib.SequenceMatcher(None, _clean_query, _clean_result).ratio()
         print(f"\n   Title gate: '{_clean_query}' vs '{_clean_result}' → {_title_sim:.2f}")
         if _title_sim >= 0.40:
             best_match = candidate
